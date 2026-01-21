@@ -1,4 +1,4 @@
-# Neworld 自动签到脚本（终极稳定版）
+# Neworld 自动签到脚本（终极稳定 + 多Slot + 跨运行记忆版）
 import os
 import time
 import logging
@@ -26,6 +26,18 @@ logging.basicConfig(
 def log(msg):
     logging.info(msg)
 
+# ========= Slot 标记机制 =========
+def get_slot_and_markfile():
+    slot = os.environ.get("SLOT", "").strip()
+    if not slot:
+        log("❌ 未获取到 SLOT 环境变量")
+        return None, None
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    mark_file = f".signin_done_slot{slot}.txt"
+    return slot, mark_file, today
+
+# ========= 浏览器 =========
 def init_chrome():
     from webdriver_manager.chrome import ChromeDriverManager
 
@@ -62,14 +74,32 @@ def main():
     password = os.environ.get("PASSWORD", "").strip()
 
     if not username or not password:
-        log("❌ 未获取到账号或密码，请检查 GitHub Secrets")
+        log("❌ 未获取到账号或密码")
         return
 
-    log(f"👤 当前账号：{username}")
+    slot = os.environ.get("SLOT", "").strip()
+    if not slot:
+        log("❌ 未指定 SLOT")
+        return
 
-    driver = init_chrome()
+    today = datetime.now().strftime("%Y-%m-%d")
+    mark_file = f".signin_done_slot{slot}.txt"
+
+    log(f"👤 当前账号（Slot{slot}）：{username}")
+
+    # ========= 0. 先检查是否已经签过 =========
+    if os.path.exists(mark_file):
+        with open(mark_file, "r", encoding="utf-8") as f:
+            old = f.read().strip()
+        if old == today:
+            log(f"✅ Slot{slot} 今天已经签过到（标记文件存在），直接退出")
+            return
+
+    driver = None
 
     try:
+        driver = init_chrome()
+
         # ========== 1. 打开登录页 ==========
         log("🌐 打开登录页")
         driver.get(LOGIN_URL)
@@ -85,7 +115,6 @@ def main():
         email_input.send_keys(username)
         pwd_input.clear()
         pwd_input.send_keys(password)
-
         save_screen(driver, "filled_form")
 
         # ========== 3. 点击登录 ==========
@@ -93,7 +122,6 @@ def main():
         login_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "login-dashboard")))
         login_btn.click()
 
-        # 等待跳转
         WebDriverWait(driver, 30).until(lambda d: "/auth/login" not in d.current_url)
         time.sleep(2)
         save_screen(driver, "after_login")
@@ -112,9 +140,12 @@ def main():
         btn_text = sign_btn.text.strip()
         log(f"📌 按钮文字：{btn_text}")
 
-        # ========== 6. 判断是否已签到 ==========
+        # ========== 6. 如果已签到 ==========
         if "已" in btn_text or "成功" in btn_text:
-            log("🎉 今天已经签过到了，无需重复签到")
+            log(f"🎉 Slot{slot} 今天已经是签到状态（可能是手动签的）")
+            with open(mark_file, "w", encoding="utf-8") as f:
+                f.write(today)
+            log(f"📝 已写入签到标记文件: {mark_file}")
             return
 
         # ========== 7. 点击签到 ==========
@@ -123,7 +154,6 @@ def main():
         time.sleep(1)
         sign_btn.click()
         time.sleep(3)
-
         save_screen(driver, "after_click")
 
         # ========== 8. 再次检测状态 ==========
@@ -132,18 +162,26 @@ def main():
             new_text = sign_btn2.text.strip()
             log(f"📌 点击后按钮文字：{new_text}")
             if "已" in new_text or "成功" in new_text:
-                log("🎉 签到成功！")
+                log(f"🎉 Slot{slot} 签到成功！")
+                with open(mark_file, "w", encoding="utf-8") as f:
+                    f.write(today)
+                log(f"📝 已写入签到标记文件: {mark_file}")
             else:
                 log("⚠️ 状态未知，可能页面改版")
         except:
-            log("🎉 签到成功（按钮已消失）")
+            log(f"🎉 Slot{slot} 签到成功（按钮已消失）")
+            with open(mark_file, "w", encoding="utf-8") as f:
+                f.write(today)
+            log(f"📝 已写入签到标记文件: {mark_file}")
 
     except Exception as e:
         log(f"❌ 执行出错：{e}")
-        save_screen(driver, "ERROR")
+        if driver:
+            save_screen(driver, "ERROR")
 
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
         log("🛑 脚本结束")
 
 if __name__ == "__main__":
