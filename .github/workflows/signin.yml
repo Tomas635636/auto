@@ -1,15 +1,26 @@
-name: Neworld Multi Account Signin
+name: Neworld Multi Slot Signin (Reliable)
 
 on:
   schedule:
-    # 北京时间 09:10
+    # ===== Slot1 北京时间 09:10 =====
+    - cron: "05 1 * * *"
     - cron: "10 1 * * *"
-    # 北京时间 13:10
+    - cron: "15 1 * * *"
+
+    # ===== Slot2 北京时间 13:10 =====
+    - cron: "05 5 * * *"
     - cron: "10 5 * * *"
-    # 北京时间 17:55
+    - cron: "15 5 * * *"
+
+    # ===== Slot3 北京时间 17:55 =====
+    - cron: "50 9 * * *"
     - cron: "55 9 * * *"
-    # 北京时间 21:55
+    - cron: "0 10 * * *"
+
+    # ===== Slot4 北京时间 21:55 =====
+    - cron: "50 13 * * *"
     - cron: "55 13 * * *"
+    - cron: "0 14 * * *"
 
   workflow_dispatch:
 
@@ -30,71 +41,87 @@ jobs:
         run: |
           pip install selenium webdriver-manager
 
-      - name: Select account by time slot
+      - name: Select slot by time
+        env:
+          NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
+          NW_SLOT1_PASS: ${{ secrets.NW_SLOT1_PASS }}
+          NW_SLOT2_USER: ${{ secrets.NW_SLOT2_USER }}
+          NW_SLOT2_PASS: ${{ secrets.NW_SLOT2_PASS }}
+          NW_SLOT3_USER: ${{ secrets.NW_SLOT3_USER }}
+          NW_SLOT3_PASS: ${{ secrets.NW_SLOT3_PASS }}
+          NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
+          NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
         run: |
-          HOUR=9
-          echo "UTC hour = $HOUR"
+          HOUR=$(date -u +"%H")
+          MIN=$(date -u +"%M")
+          echo "Now UTC = $HOUR:$MIN"
 
-          pick_slot_1() {
-            USER="${{ secrets.NW_SLOT1_USER }}"
-            PASS="${{ secrets.NW_SLOT1_PASS }}"
+          pick_slot() {
+            SLOT=$1
+            USER_VAR="NW_SLOT${SLOT}_USER"
+            PASS_VAR="NW_SLOT${SLOT}_PASS"
+
+            USER="${!USER_VAR}"
+            PASS="${!PASS_VAR}"
+
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot1 is empty, skip."
+              echo "Slot$SLOT is empty, skip."
               exit 0
             fi
+
+            echo "Use Slot$SLOT"
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
+            echo "SLOT=$SLOT" >> $GITHUB_ENV
           }
 
-          pick_slot_2() {
-            USER="${{ secrets.NW_SLOT2_USER }}"
-            PASS="${{ secrets.NW_SLOT2_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot2 is empty, skip."
-              exit 0
+          in_window() {
+            H=$1
+            M1=$2
+            M2=$3
+            if [ "$HOUR" = "$H" ] && [ "$MIN" -ge "$M1" ] && [ "$MIN" -le "$M2" ]; then
+              return 0
             fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
+            return 1
           }
 
-          pick_slot_3() {
-            USER="${{ secrets.NW_SLOT3_USER }}"
-            PASS="${{ secrets.NW_SLOT3_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot3 is empty, skip."
-              exit 0
-            fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
-          }
+          # Slot1: 01:05 - 01:15
+          if in_window 01 05 15; then
+            pick_slot 1
 
-          pick_slot_4() {
-            USER="${{ secrets.NW_SLOT4_USER }}"
-            PASS="${{ secrets.NW_SLOT4_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot4 is empty, skip."
-              exit 0
-            fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
-          }
+          # Slot2: 05:05 - 05:15
+          elif in_window 05 05 15; then
+            pick_slot 2
 
-          if [ "$HOUR" = "1" ]; then
-            pick_slot_1
-          elif [ "$HOUR" = "5" ]; then
-            pick_slot_2
-          elif [ "$HOUR" = "9" ]; then
-            pick_slot_3
-          elif [ "$HOUR" = "13" ]; then
-            pick_slot_4
+          # Slot3: 09:50 - 10:00
+          elif in_window 09 50 59 || in_window 10 00 00; then
+            pick_slot 3
+
+          # Slot4: 13:50 - 14:00
+          elif in_window 13 50 59 || in_window 14 00 00; then
+            pick_slot 4
+
           else
-            echo "Not in schedule window."
+            echo "Not in any slot window, exit."
             exit 0
           fi
 
       - name: Run signin script
         run: |
           python help.py
+
+      - name: Commit signin mark if exists
+        run: |
+          git config --global user.email "bot@github.com"
+          git config --global user.name "github-actions"
+
+          if ls .signin_done_slot*.txt 1> /dev/null 2>&1; then
+            git add .signin_done_slot*.txt
+            git commit -m "Update signin mark" || echo "Nothing to commit"
+            git push
+          else
+            echo "No signin mark file"
+          fi
 
       - name: Upload logs and screenshots
         if: always()
