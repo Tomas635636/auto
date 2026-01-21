@@ -1,0 +1,97 @@
+name: Neworld Multi Account Signin
+
+on:
+  schedule:
+    # 北京时间 09:10
+    - cron: "10 1 * * *"
+    # 北京时间 13:10
+    - cron: "10 5 * * *"
+    # 北京时间 17:55
+    - cron: "55 9 * * *"
+    # 北京时间 21:55
+    - cron: "55 13 * * *"
+
+  workflow_dispatch:
+
+jobs:
+  signin:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps
+        run: |
+          pip install selenium webdriver-manager
+
+      - name: Select account by time
+        run: |
+          HOUR=$(date -u +"%H")
+          echo "UTC hour = $HOUR"
+
+          pick_slot_1() {
+            USER="${{ secrets.NW_SLOT1_USER }}"
+            PASS="${{ secrets.NW_SLOT1_PASS }}"
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "Slot1 is empty, skip."
+              exit 0
+            fi
+            echo "USERNAME=$USER" >> $GITHUB_ENV
+            echo "PASSWORD=$PASS" >> $GITHUB_ENV
+          }
+
+          pick_slot_2() {
+            USER="${{ secrets.NW_SLOT2_USER }}"
+            PASS="${{ secrets.NW_SLOT2_PASS }}"
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "Slot2 is empty, skip."
+              exit 0
+            fi
+            echo "USERNAME=$USER" >> $GITHUB_ENV
+            echo "PASSWORD=$PASS" >> $GITHUB_ENV
+          }
+
+          pick_slot_3() {
+            USER="${{ secrets.NW_SLOT3_USER }}"
+            PASS="${{ secrets.NW_SLOT3_PASS }}"
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "Slot3 is empty, skip."
+              exit 0
+            fi
+            echo "USERNAME=$USER" >> $GITHUB_ENV
+            echo "PASSWORD=$PASS" >> $GITHUB_ENV
+          }
+
+          pick_slot_4() {
+            USER="${{ secrets.NW_SLOT4_USER }}"
+            PASS="${{ secrets.NW_SLOT4_PASS }}"
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "Slot4 is empty, skip."
+              exit 0
+            fi
+            echo "USERNAME=$USER" >> $GITHUB_ENV
+            echo "PASSWORD=$PASS" >> $GITHUB_ENV
+          }
+
+          if [ "$HOUR" = "1" ]; then
+            pick_slot_1
+          elif [ "$HOUR" = "5" ]; then
+            pick_slot_2
+          elif [ "$HOUR" = "9" ]; then
+            pick_slot_3
+          elif [ "$HOUR" = "13" ]; then
+            pick_slot_4
+          else
+            echo "Not in schedule window."
+            exit 0
+          fi
+
+      - name: Run signin
+        run: |
+          python help.py
