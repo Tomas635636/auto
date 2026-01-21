@@ -32,7 +32,7 @@ jobs:
 
       - name: Select account by time slot
         run: |
-          HOUR=$(date -u +"%H")
+          HOUR=9
           echo "UTC hour = $HOUR"
 
           pick_slot_1() {
