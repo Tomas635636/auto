@@ -28,6 +28,9 @@ jobs:
   signin:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -45,8 +48,7 @@ jobs:
         shell: bash
         run: |
           UTC_HOUR=$(date -u +"%H")
-          UTC_MIN=$(date -u +"%M")
-          echo "UTC time: $UTC_HOUR:$UTC_MIN"
+          echo "UTC hour: $UTC_HOUR"
 
           pick_slot() {
             SLOT="$1"
@@ -66,22 +68,14 @@ jobs:
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
           }
 
-          # slot1: UTC 00:10-00:20
           if [ "$UTC_HOUR" = "00" ]; then
             pick_slot "SLOT1"
-
-          # slot2: UTC 04:10-00:20
           elif [ "$UTC_HOUR" = "04" ]; then
             pick_slot "SLOT2"
-
-          # slot3: UTC 08:10-00:20
           elif [ "$UTC_HOUR" = "08" ]; then
             pick_slot "SLOT3"
-
-          # slot4: UTC 12:10-00:20
           elif [ "$UTC_HOUR" = "12" ]; then
             pick_slot "SLOT4"
-
           else
             echo "Not in any slot window, exit."
             exit 0
@@ -105,8 +99,8 @@ jobs:
           git config --global user.name "github-actions"
           git config --global user.email "bot@github.com"
 
-          if ls SIGNED_*.txt 1> /dev/null 2>&1; then
-            git add SIGNED_*.txt
+          if ls SIGNED_SLOT*.txt 1> /dev/null 2>&1; then
+            git add SIGNED_SLOT*.txt
             git commit -m "mark: signed ok" || echo "Nothing to commit"
             git push
           else
@@ -121,4 +115,4 @@ jobs:
           path: |
             *.png
             run.log
-            SIGNED_*.txt
+            SIGNED_SLOT*.txt
