@@ -2,14 +2,26 @@ name: Neworld Multi Account Signin
 
 on:
   schedule:
-    # 北京时间 09:10
-    - cron: "10 1 * * *"
-    # 北京时间 13:10
-    - cron: "10 5 * * *"
-    # 北京时间 17:55
-    - cron: "55 9 * * *"
-    # 北京时间 21:55
-    - cron: "55 13 * * *"
+    # slot1 北京 08:10-08:20 (UTC 00:10-00:20)
+    - cron: "10 0 * * *"
+    - cron: "15 0 * * *"
+    - cron: "20 0 * * *"
+
+    # slot2 北京 12:10-12:20 (UTC 04:10-04:20)
+    - cron: "10 4 * * *"
+    - cron: "15 4 * * *"
+    - cron: "20 4 * * *"
+
+    # slot3 北京 16:10-16:20 (UTC 08:10-08:20)
+    - cron: "10 8 * * *"
+    - cron: "15 8 * * *"
+    - cron: "20 8 * * *"
+
+    # slot4 北京 20:10-20:20 (UTC 12:10-12:20)
+    - cron: "10 12 * * *"
+    - cron: "15 12 * * *"
+    - cron: "20 12 * * *"
+
   workflow_dispatch:
 
 jobs:
@@ -30,56 +42,59 @@ jobs:
           pip install selenium webdriver-manager
 
       - name: Select account by time slot
+        shell: bash
         run: |
-          HOUR=$(date -u +"%H")
-          MIN=$(date -u +"%M")
-          echo "UTC time = $HOUR:$MIN"
+          UTC_HOUR=$(date -u +"%H")
+          UTC_MIN=$(date -u +"%M")
+          echo "UTC time: $UTC_HOUR:$UTC_MIN"
 
-          pick_slot_1() {
-            USER="${{ secrets.NW_SLOT1_USER }}"
-            PASS="${{ secrets.NW_SLOT1_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then exit 0; fi
+          pick_slot() {
+            SLOT="$1"
+            USER_VAR="NW_${SLOT}_USER"
+            PASS_VAR="NW_${SLOT}_PASS"
+
+            USER="${!USER_VAR}"
+            PASS="${!PASS_VAR}"
+
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "Slot $SLOT has no account, skip."
+              exit 0
+            fi
+
+            echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
           }
 
-          pick_slot_2() {
-            USER="${{ secrets.NW_SLOT2_USER }}"
-            PASS="${{ secrets.NW_SLOT2_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then exit 0; fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
-          }
+          # slot1: UTC 00:10-00:20
+          if [ "$UTC_HOUR" = "00" ]; then
+            pick_slot "SLOT1"
 
-          pick_slot_3() {
-            USER="${{ secrets.NW_SLOT3_USER }}"
-            PASS="${{ secrets.NW_SLOT3_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then exit 0; fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
-          }
+          # slot2: UTC 04:10-00:20
+          elif [ "$UTC_HOUR" = "04" ]; then
+            pick_slot "SLOT2"
 
-          pick_slot_4() {
-            USER="${{ secrets.NW_SLOT4_USER }}"
-            PASS="${{ secrets.NW_SLOT4_PASS }}"
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then exit 0; fi
-            echo "USERNAME=$USER" >> $GITHUB_ENV
-            echo "PASSWORD=$PASS" >> $GITHUB_ENV
-          }
+          # slot3: UTC 08:10-00:20
+          elif [ "$UTC_HOUR" = "08" ]; then
+            pick_slot "SLOT3"
 
-          # 判断 slot（UTC）
-          if [ "$HOUR" = "1" ]; then
-            pick_slot_1
-          elif [ "$HOUR" = "5" ]; then
-            pick_slot_2
-          elif [ "$HOUR" = "9" ]; then
-            pick_slot_3
-          elif [ "$HOUR" = "13" ]; then
-            pick_slot_4
+          # slot4: UTC 12:10-00:20
+          elif [ "$UTC_HOUR" = "12" ]; then
+            pick_slot "SLOT4"
+
           else
-            echo "Not in any slot window."
+            echo "Not in any slot window, exit."
             exit 0
           fi
+        env:
+          NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
+          NW_SLOT1_PASS: ${{ secrets.NW_SLOT1_PASS }}
+          NW_SLOT2_USER: ${{ secrets.NW_SLOT2_USER }}
+          NW_SLOT2_PASS: ${{ secrets.NW_SLOT2_PASS }}
+          NW_SLOT3_USER: ${{ secrets.NW_SLOT3_USER }}
+          NW_SLOT3_PASS: ${{ secrets.NW_SLOT3_PASS }}
+          NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
+          NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
 
       - name: Run signin script
         run: |
@@ -87,11 +102,12 @@ jobs:
 
       - name: Commit signin mark if exists
         run: |
+          git config --global user.name "github-actions"
           git config --global user.email "bot@github.com"
-          git config --global user.name "github-bot"
-          if [ -f SIGNED_OK.txt ]; then
-            git add SIGNED_OK.txt
-            git commit -m "mark: signed ok"
+
+          if ls SIGNED_*.txt 1> /dev/null 2>&1; then
+            git add SIGNED_*.txt
+            git commit -m "mark: signed ok" || echo "Nothing to commit"
             git push
           else
             echo "No signin mark file"
@@ -105,4 +121,4 @@ jobs:
           path: |
             *.png
             run.log
-            SIGNED_OK.txt
+            SIGNED_*.txt
