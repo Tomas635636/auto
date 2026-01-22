@@ -1,4 +1,4 @@
-# Neworld 自动签到脚本（终极稳定版：4 slot 独立标记 + 跨运行记忆）
+# Neworld 自动签到脚本（终极稳定版：4 Slot + 跨运行记忆 + 每日幂等）
 
 import os
 import time
@@ -13,17 +13,9 @@ from selenium.webdriver.support import expected_conditions as EC
 LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
 
-# ========= 读取 slot =========
-SLOT = os.environ.get("SLOT_NAME", "").strip()
-if not SLOT:
-    print("❌ 未设置 SLOT_NAME，直接退出")
-    exit(0)
-
-TODAY = datetime.now().strftime("%Y-%m-%d")
-MARK_FILE = f"SIGNED_{TODAY}_{SLOT}.txt"
-
-# ========= 日志系统 =========
 LOG_FILE = "run.log"
+
+# ========= 日志 =========
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -65,49 +57,59 @@ def save_screen(driver, name):
         pass
 
 def main():
-    log(f"🚀 启动自动签到脚本 | SLOT = {SLOT}")
+    log("🚀 启动自动签到脚本")
 
-    # ===== 1. 跨运行记忆：如果今天这个 slot 已经签过，直接退出 =====
-    if os.path.exists(MARK_FILE):
-        log(f"🛑 检测到标记文件 {MARK_FILE}，今日 {SLOT} 已签到，直接退出")
-        return
-
+    slot = os.environ.get("SLOT_NAME", "").strip()
     username = os.environ.get("USERNAME", "").strip()
     password = os.environ.get("PASSWORD", "").strip()
 
-    if not username or not password:
-        log("❌ 未获取到账号或密码，直接退出")
+    if not slot:
+        log("❌ 未指定 SLOT_NAME，直接退出")
         return
 
+    if not username or not password:
+        log("❌ 未获取到账号或密码，跳过")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    mark_file = f"SIGNED_{slot}.txt"
+
+    # ====== 跨运行记忆判断 ======
+    if os.path.exists(mark_file):
+        with open(mark_file, "r", encoding="utf-8") as f:
+            last = f.read().strip()
+
+        if last == today:
+            log(f"🛑 Slot {slot} 今日已经成功签到过，直接退出（不再登录网站）")
+            return
+
+    log(f"👤 当前 Slot：{slot}")
     log(f"👤 当前账号：{username}")
 
     driver = init_chrome()
 
     try:
-        # ========== 2. 打开登录页 ==========
+        # ========== 打开登录页 ==========
         log("🌐 打开登录页")
         driver.get(LOGIN_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         save_screen(driver, "login_page")
 
-        # ========== 3. 输入账号密码 ==========
+        # ========== 输入账号密码 ==========
         log("✍️ 输入账号密码")
-        email_input = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.ID, "email"))
-        )
+        email_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "email")))
         pwd_input = driver.find_element(By.ID, "passwd")
 
         email_input.clear()
         email_input.send_keys(username)
         pwd_input.clear()
         pwd_input.send_keys(password)
+
         save_screen(driver, "filled_form")
 
-        # ========== 4. 点击登录 ==========
+        # ========== 点击登录 ==========
         log("🔐 点击登录按钮")
-        login_btn = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.ID, "login-dashboard"))
-        )
+        login_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "login-dashboard")))
         login_btn.click()
 
         WebDriverWait(driver, 30).until(lambda d: "/auth/login" not in d.current_url)
@@ -115,55 +117,54 @@ def main():
         save_screen(driver, "after_login")
         log("✅ 登录成功")
 
-        # ========== 5. 进入用户中心 ==========
+        # ========== 进入用户中心 ==========
         log("🏠 进入用户中心")
         driver.get(USER_CENTER_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         time.sleep(2)
         save_screen(driver, "user_center")
 
-        # ========== 6. 查找签到按钮 ==========
+        # ========== 查找签到按钮 ==========
         log("🔍 查找签到按钮")
-        sign_btn = WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.ID, "check-in"))
-        )
+        sign_btn = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "check-in")))
         btn_text = sign_btn.text.strip()
         log(f"📌 按钮文字：{btn_text}")
 
-        # ========== 7. 判断网页是否已签到 ==========
+        # ========== 已签到判断 ==========
         if "已" in btn_text or "成功" in btn_text:
-            log(f"🎉 网页显示今日已签到（{SLOT}）")
-
-            with open(MARK_FILE, "w", encoding="utf-8") as f:
-                f.write(f"{TODAY} {SLOT} already signed\n")
-
+            log("🎉 今日已经签过到（网页检测）")
+            with open(mark_file, "w", encoding="utf-8") as f:
+                f.write(today)
             return
 
-        # ========== 8. 点击签到 ==========
+        # ========== 点击签到 ==========
         log("🖱️ 点击签到按钮")
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sign_btn)
         time.sleep(1)
         sign_btn.click()
         time.sleep(3)
+
         save_screen(driver, "after_click")
 
-        # ========== 9. 再次检测 ==========
+        # ========== 再次检测 ==========
         try:
             sign_btn2 = driver.find_element(By.ID, "check-in")
             new_text = sign_btn2.text.strip()
             log(f"📌 点击后按钮文字：{new_text}")
 
             if "已" in new_text or "成功" in new_text:
-                log(f"🎉 签到成功！（{SLOT}）")
-                with open(MARK_FILE, "w", encoding="utf-8") as f:
-                    f.write(f"{TODAY} {SLOT} signed ok\n")
+                log("🎉 签到成功！")
+                with open(mark_file, "w", encoding="utf-8") as f:
+                    f.write(today)
             else:
-                log("⚠️ 状态未知，可能页面改版")
+                log("⚠️ 状态未知，但仍写入成功标记以避免重复登录")
+                with open(mark_file, "w", encoding="utf-8") as f:
+                    f.write(today)
 
         except:
-            log(f"🎉 签到成功！（按钮已消失）（{SLOT}）")
-            with open(MARK_FILE, "w", encoding="utf-8") as f:
-                f.write(f"{TODAY} {SLOT} signed ok\n")
+            log("🎉 签到成功（按钮已消失）")
+            with open(mark_file, "w", encoding="utf-8") as f:
+                f.write(today)
 
     except Exception as e:
         log(f"❌ 执行出错：{e}")
