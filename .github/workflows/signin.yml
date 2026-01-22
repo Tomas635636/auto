@@ -2,23 +2,29 @@ name: Neworld Multi Account Signin
 
 on:
   schedule:
-    # slot2 北京 12:10-12:20 (UTC 04:10-04:20)
+    # ========== slot1 北京 08:10-08:20 (UTC 00:10-00:20) ==========
+    - cron: "10 0 * * *"
+    - cron: "15 0 * * *"
+    - cron: "20 0 * * *"
+
+    # ========== slot2 北京 12:10-12:20 (UTC 04:10-04:20) ==========
     - cron: "10 4 * * *"
     - cron: "15 4 * * *"
     - cron: "20 4 * * *"
 
-    # slot3 北京 16:10-16:20 (UTC 08:10-08:20)
+    # ========== slot3 北京 16:10-16:20 (UTC 08:10-08:20) ==========
     - cron: "10 8 * * *"
     - cron: "15 8 * * *"
     - cron: "20 8 * * *"
 
-    # slot4 北京 20:10-20:20 (UTC 12:10-12:20)
+    # ========== slot4 北京 20:10-20:20 (UTC 12:10-12:20) ==========
     - cron: "10 12 * * *"
     - cron: "15 12 * * *"
     - cron: "20 12 * * *"
 
   workflow_dispatch:
 
+# ========= 必须给写权限，否则无法提交 SIGNED 文件 =========
 permissions:
   contents: write
 
@@ -27,27 +33,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # ========== 拉取仓库 ==========
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # ========== Python 环境 ==========
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - run: pip install selenium webdriver-manager requests
+      # ========== 安装依赖 ==========
+      - name: Install dependencies
+        run: |
+          pip install selenium webdriver-manager requests
 
+      # ========== 根据 UTC 时间选择 slot ==========
       - name: Select account by time slot
         shell: bash
         run: |
           UTC_HOUR=$(date -u +"%H")
-          echo "UTC hour = $UTC_HOUR"
+          UTC_MIN=$(date -u +"%M")
+          echo "UTC time: $UTC_HOUR:$UTC_MIN"
 
-          pick() {
+          pick_slot() {
             SLOT="$1"
-            USER="$2"
-            PASS="$3"
+            USER_VAR="NW_${SLOT}_USER"
+            PASS_VAR="NW_${SLOT}_PASS"
+
+            USER="${!USER_VAR}"
+            PASS="${!PASS_VAR}"
 
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "$SLOT empty, skip"
+              echo "Slot $SLOT has no account configured. Exit."
               exit 0
             fi
 
@@ -56,23 +74,45 @@ jobs:
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
           }
 
-          if [ "$UTC_HOUR" = "04" ]; then
-            pick "SLOT2" "${{ secrets.NW_SLOT2_USER }}" "${{ secrets.NW_SLOT2_PASS }}"
+          # slot1: UTC 00
+          if [ "$UTC_HOUR" = "00" ]; then
+            pick_slot "SLOT1"
+
+          # slot2: UTC 04
+          elif [ "$UTC_HOUR" = "04" ]; then
+            pick_slot "SLOT2"
+
+          # slot3: UTC 08
           elif [ "$UTC_HOUR" = "08" ]; then
-            pick "SLOT3" "${{ secrets.NW_SLOT3_USER }}" "${{ secrets.NW_SLOT3_PASS }}"
+            pick_slot "SLOT3"
+
+          # slot4: UTC 12
           elif [ "$UTC_HOUR" = "12" ]; then
-            pick "SLOT4" "${{ secrets.NW_SLOT4_USER }}" "${{ secrets.NW_SLOT4_PASS }}"
+            pick_slot "SLOT4"
+
           else
-            echo "Not in slot window"
+            echo "Not in any slot window, exit."
             exit 0
           fi
+        env:
+          NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
+          NW_SLOT1_PASS: ${{ secrets.NW_SLOT1_PASS }}
+          NW_SLOT2_USER: ${{ secrets.NW_SLOT2_USER }}
+          NW_SLOT2_PASS: ${{ secrets.NW_SLOT2_PASS }}
+          NW_SLOT3_USER: ${{ secrets.NW_SLOT3_USER }}
+          NW_SLOT3_PASS: ${{ secrets.NW_SLOT3_PASS }}
+          NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
+          NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
 
+      # ========== 运行签到脚本 ==========
       - name: Run signin
-        run: python help.py
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python help.py
 
+      # ========== 提交签到标记文件 ==========
       - name: Commit mark
         run: |
           git config --global user.name "github-actions"
@@ -80,10 +120,13 @@ jobs:
 
           if ls SIGNED_*.txt 1> /dev/null 2>&1; then
             git add SIGNED_*.txt
-            git commit -m "mark: signed" || echo "no change"
+            git commit -m "mark: update signin status" || echo "Nothing to commit"
             git push
+          else
+            echo "No SIGNED file generated"
           fi
 
+      # ========== 上传日志和截图 ==========
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
