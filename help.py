@@ -1,7 +1,12 @@
 # Neworld 自动签到脚本（多账号 slot + 跨运行记忆 + Telegram 通知 + 流量/到期抓取）
-# - 每个 slot 对应一个 SIGNED_SLOT?.txt，永远追加写，不删除旧记录
-# - 同一天如果已经 SUCCESS 或 ALREADY，则后续触发不会再登录（降低封号风险）
-# - 如果 slot 未配置（缺账号/密码），也会发 TG 提醒：未配置
+# 功能说明：
+# 1. 每个 slot 对应一个 SIGNED_SLOT?.txt，永远追加写，不删除旧记录
+# 2. 同一天如果已经 SUCCESS 或 ALREADY，则后续触发不会再登录（降低封号风险）
+# 3. 如果 slot 未配置（缺账号/密码），也会发 TG 提醒：未配置
+# 4. 每次运行都会抓取：
+#    - 剩余流量
+#    - 到期时间（yyyy-mm-dd HH:MM:SS）
+# 5. 所有运行过程写入 run.log，截图保存为 png（但不会提交到仓库）
 
 import os
 import re
@@ -16,12 +21,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# ================== 网站地址 ==================
 LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
 
+# ================== 日志文件 ==================
 LOG_FILE = "run.log"
 
-# ========== 日志 ==========
+# ================== 日志系统 ==================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -34,7 +41,7 @@ logging.basicConfig(
 def log(msg: str):
     logging.info(msg)
 
-# ========== 时区（北京时间）==========
+# ================== 时区（北京时间） ==================
 CN_TZ = timezone(timedelta(hours=8))
 
 def now_cn() -> datetime:
@@ -47,7 +54,7 @@ def ts_cn_str() -> str:
     # 年月日 时分秒
     return now_cn().strftime("%Y-%m-%d %H:%M:%S")
 
-# ========== Telegram 通知 ==========
+# ================== Telegram 通知 ==================
 TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
 
@@ -61,7 +68,7 @@ def tg_notify(text: str):
     except:
         pass
 
-# ========== 邮箱脱敏 ==========
+# ================== 邮箱脱敏 ==================
 def mask_email(email: str) -> str:
     """
     举例：
@@ -73,13 +80,14 @@ def mask_email(email: str) -> str:
         return "***"
 
     name, domain = email.split("@", 1)
-    # name 脱敏
+
+    # 用户名脱敏
     if len(name) <= 2:
         name_mask = name[0] + "***"
     else:
         name_mask = name[:2] + "***" + name[-2:]
 
-    # domain 脱敏（只展示首字母 + 后缀）
+    # 域名脱敏（只显示首字母 + 后缀）
     if "." in domain:
         d0 = domain.split(".")[0]
         suffix = "." + ".".join(domain.split(".")[1:])
@@ -89,7 +97,7 @@ def mask_email(email: str) -> str:
     d0_mask = (d0[:1] if d0 else "x") + "***"
     return f"{name_mask}@{d0_mask}{suffix}"
 
-# ========== Chrome 初始化 ==========
+# ================== Chrome 初始化 ==================
 def init_chrome():
     from webdriver_manager.chrome import ChromeDriverManager
 
@@ -100,7 +108,7 @@ def init_chrome():
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--disable-gpu")
 
-    # UA 可以不写，也可以写（写了更像真实浏览器，但也不保证）
+    # 模拟真实浏览器 UA
     chrome_options.add_argument(
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -114,6 +122,7 @@ def init_chrome():
     return driver
 
 def save_screen(driver, name: str):
+    """保存当前页面截图（调试用）"""
     try:
         filename = f"{now_cn().strftime('%Y%m%d_%H%M%S')}_{name}.png"
         driver.save_screenshot(filename)
@@ -121,14 +130,15 @@ def save_screen(driver, name: str):
     except:
         pass
 
-# ========== SIGNED 文件读写（追加写，不删除旧内容）==========
+# ================== SIGNED 文件机制 ==================
 def signed_file_path(slot_name: str) -> str:
     return f"SIGNED_{slot_name}.txt"
 
 def parse_signed_success_today(slot_name: str) -> bool:
     """
     判断今天是否已经成功签过：
-    - 只要 SIGNED_{slot}.txt 中存在今天日期，且包含 SUCCESS 或 ALREADY，就认为今天已完成
+    - 只要 SIGNED_{slot}.txt 中存在今天日期，且包含 SUCCESS 或 ALREADY
+    - 就认为今天已完成，不再登录
     """
     path = signed_file_path(slot_name)
     if not os.path.exists(path):
@@ -147,9 +157,10 @@ def parse_signed_success_today(slot_name: str) -> bool:
 def append_signed_log(slot_name: str, status: str, email_masked: str,
                       remaining: str = "-", expire_at: str = "-", detail: str = "-"):
     """
-    永远追加写一行，方便你回溯
-    格式示例：
-      2026-01-22 11:16:03 | SLOT2 | ab***fg@g***.com | SUCCESS | remaining=20GB | expire=2026-01-24 13:57:41 | detail=clicked
+    永远追加写一行，方便回溯历史
+
+    示例：
+    2026-01-22 11:16:03 | SLOT2 | ab***fg@g***.com | SUCCESS | remaining=20GB | expire=2026-01-24 13:57:41 | detail=clicked
     """
     line = (
         f"{ts_cn_str()} | {slot_name} | {email_masked} | {status} | "
@@ -159,14 +170,18 @@ def append_signed_log(slot_name: str, status: str, email_masked: str,
     with open(path, "a", encoding="utf-8") as f:
         f.write(line)
 
-# ========== 从用户中心页面提取“剩余流量 / 到期时间”==========
+# ================== 抓取“剩余流量 / 到期时间” ==================
 def extract_remaining_and_expire(driver):
     """
-    你的截图里类似：
-      <span>剩余流量 20GB</span>
-      <p class="my-3">你的账户大约还有 2 天到期（2026-01-24 13:57:41）</p>
+    从用户中心页面提取：
+      - 剩余流量（例如：19.87GB）
+      - 到期时间（例如：2026-01-24 13:57:41）
 
-    这里做“文本包含”匹配，尽量不依赖 class/id，网页改动更抗打。
+    设计原则：
+      - 不依赖 class / id
+      - 不依赖“到期”这两个字
+      - 只要页面中出现 yyyy-mm-dd HH:MM:SS 这种格式就抓出来
+      - 网页改版也能抗住
     """
     remaining = "-"
     expire_at = "-"
@@ -177,20 +192,21 @@ def extract_remaining_and_expire(driver):
     except:
         body_text = ""
 
-    # 剩余流量：抓 “剩余流量” 后面的一段
-    # 例：剩余流量 20GB
+    # ===== 剩余流量 =====
+    # 匹配：剩余流量 19.87GB
     m1 = re.search(r"剩余流量\s*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|TB))", body_text, re.IGNORECASE)
     if m1:
         remaining = m1.group(1).replace(" ", "")
 
-    # 到期时间：优先抓括号里的 yyyy-mm-dd HH:MM:SS
-    m2 = re.search(r"到期[（(]\s*([0-9]{4}-[0-9]{2}-[0-9]{2}\s+[0-9]{2}:[0-9]{2}:[0-9]{2})\s*[)）]", body_text)
+    # ===== 到期时间 =====
+    # 只要页面中出现：2026-01-24 13:57:41 这种格式就抓
+    m2 = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", body_text)
     if m2:
         expire_at = m2.group(1)
 
     return remaining, expire_at
 
-# ========== 主流程 ==========
+# ================== 主流程 ==================
 def main():
     slot_name = os.environ.get("SLOT_NAME", "").strip() or "UNKNOWN_SLOT"
     username = os.environ.get("USERNAME", "").strip()
@@ -201,17 +217,16 @@ def main():
     log("🚀 启动自动签到脚本")
     log(f"🧩 当前 slot: {slot_name} | 账号: {email_masked}")
 
-    # 1) 若今天已完成，直接退出（避免频繁登录）
+    # 1) 如果今天已经成功过，直接退出（防止频繁登录）
     if parse_signed_success_today(slot_name):
         msg = f"✅ {slot_name} 今日已完成签到（跳过登录）\n账号：{email_masked}"
         log(msg)
         tg_notify(msg)
         return
 
-    # 2) 未配置账号密码：写日志 + TG 提醒
+    # 2) 如果未配置账号密码
     if not username or not password:
-        remaining, expire_at = "-", "-"
-        append_signed_log(slot_name, "NOT_CONFIGURED", email_masked, remaining, expire_at, "missing secrets")
+        append_signed_log(slot_name, "NOT_CONFIGURED", email_masked, "-", "-", "missing secrets")
         msg = (
             f"⚠️ {slot_name} 未配置账号/密码（跳过）\n"
             f"账号：{email_masked}\n"
@@ -258,7 +273,7 @@ def main():
         time.sleep(2)
         save_screen(driver, "user_center")
 
-        # 7) 先抓“剩余流量/到期时间”
+        # 7) 抓取流量 / 到期时间
         remaining, expire_at = extract_remaining_and_expire(driver)
         log(f"📦 剩余流量：{remaining} | ⏳ 到期时间：{expire_at}")
 
@@ -268,18 +283,15 @@ def main():
         btn_text = (sign_btn.text or "").strip()
         log(f"📌 签到按钮文字：{btn_text}")
 
-        # 9) 已签到（网页层面）
-        if ("已" in btn_text) or ("成功" in btn_text) or ("签到" not in btn_text and len(btn_text) > 0):
-            # 有些站会显示“已签到/已签”之类，这里按你之前逻辑
+        # 9) 如果网页显示已签到
+        if ("已" in btn_text) or ("成功" in btn_text):
             append_signed_log(slot_name, "ALREADY", email_masked, remaining, expire_at, f"btn={btn_text}")
             msg = (
                 f"✅ {slot_name} 已签到（网页检测）\n"
                 f"账号：{email_masked}\n"
-                f"状态：已签到\n"
                 f"剩余流量：{remaining}\n"
                 f"到期时间：{expire_at}"
             )
-            log("🎉 今日已经签过到（网页检测）")
             tg_notify(msg)
             return
 
@@ -305,7 +317,7 @@ def main():
                 status = "UNKNOWN"
                 detail = f"btn_after={new_text}"
         except:
-            # 按钮消失也可以认为成功（按你原逻辑）
+            # 按钮消失，也认为成功
             status = "SUCCESS"
             detail = "btn_disappeared"
 
@@ -315,7 +327,6 @@ def main():
             msg = (
                 f"✅ {slot_name} 签到成功\n"
                 f"账号：{email_masked}\n"
-                f"状态：成功\n"
                 f"剩余流量：{remaining}\n"
                 f"到期时间：{expire_at}"
             )
@@ -323,18 +334,16 @@ def main():
             msg = (
                 f"⚠️ {slot_name} 签到状态未知\n"
                 f"账号：{email_masked}\n"
-                f"状态：未知\n"
                 f"剩余流量：{remaining}\n"
                 f"到期时间：{expire_at}\n"
                 f"说明：{detail}"
             )
 
         tg_notify(msg)
-        log(f"✅ 流程结束：{status}")
 
     except Exception as e:
         save_screen(driver, "ERROR")
-        # 尝试在异常时也抓一次页面信息（可能抓不到）
+
         remaining, expire_at = "-", "-"
         try:
             remaining, expire_at = extract_remaining_and_expire(driver)
@@ -346,12 +355,10 @@ def main():
         msg = (
             f"❌ {slot_name} 签到失败\n"
             f"账号：{email_masked}\n"
-            f"状态：失败\n"
             f"剩余流量：{remaining}\n"
             f"到期时间：{expire_at}\n"
             f"错误：{type(e).__name__}: {e}"
         )
-        log(msg)
         tg_notify(msg)
 
     finally:
