@@ -1,18 +1,19 @@
 # ============================================
-# Neworld 多账号自动签到脚本（终极稳定版）
+# Neworld 多账号自动签到脚本（终极安全稳定版）
 # 功能：
-#  - 支持 4 个 slot（SLOT1~SLOT4）
-#  - 每个 slot 使用一个固定标记文件 SIGNED_SLOT?.txt
-#  - 文件内记录【北京时间】签到时间
-#  - 多次触发时如果检测到【今天已签到】则直接退出（不登录）
-#  - 支持 Telegram 通知
-#  - 自动截图 + 日志
+#  - 支持 4 个 slot（SLOT1~SLOT4），由 GitHub Actions 注入 SLOT_NAME
+#  - 每个 slot 使用一个固定标记文件：SIGNED_SLOT?.txt
+#  - 文件内记录：签到时间 / 剩余流量 / 到期时间
+#  - 多次触发时如果检测到【今天已签到】→ 直接退出（不登录）
+#  - Telegram 通知（显示脱敏邮箱）
+#  - 日志 + 截图
 # ============================================
 
 import os
 import time
 import logging
 import requests
+import re
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
@@ -49,7 +50,6 @@ TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
 
 def tg_notify(msg: str):
-    """发送 Telegram 消息（如果没配置 token 则自动跳过）"""
     if not TG_TOKEN or not TG_CHAT_ID:
         return
     try:
@@ -58,41 +58,38 @@ def tg_notify(msg: str):
     except Exception:
         pass
 
-# ========== 时间工具 ==========
+# ========== 工具函数 ==========
 def now_bj() -> datetime:
-    """当前北京时间"""
     return datetime.now(TZ)
 
 def today_bj() -> date:
-    """今天的北京时间日期"""
     return now_bj().date()
 
-# ========== 标记文件工具 ==========
+def mask_email(email):
+    """邮箱脱敏显示：ab***@gmail.com"""
+    if not email or "@" not in email:
+        return "***"
+    name, domain = email.split("@", 1)
+    if len(name) <= 2:
+        return name[0] + "***@" + domain
+    return name[:2] + "***@" + domain
+
+# ========== 标记文件 ==========
 def mark_filename(slot_name: str) -> str:
-    """
-    每个 slot 使用固定文件：
-    SIGNED_SLOT1.txt / SIGNED_SLOT2.txt / ...
-    """
     return f"SIGNED_{slot_name}.txt"
 
 def read_mark_if_signed_today(slot_name: str) -> bool:
-    """
-    判断：
-    - 文件存在
-    - status=OK
-    - signed_at 是【今天（北京时间）】
-    """
     fn = mark_filename(slot_name)
     if not os.path.exists(fn):
         return False
 
     try:
-        with open(fn, "r", encoding="utf-8") as f:
-            lines = [x.strip() for x in f.read().splitlines() if x.strip()]
-
         kv = {}
-        for line in lines:
-            if "=" in line:
+        with open(fn, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or "=" not in line:
+                    continue
                 k, v = line.split("=", 1)
                 kv[k.strip()] = v.strip()
 
@@ -109,17 +106,17 @@ def read_mark_if_signed_today(slot_name: str) -> bool:
         log(f"⚠️ 标记文件解析失败（将按未签到处理）：{e}")
         return False
 
-def write_mark_ok(slot_name: str):
-    """
-    写入 / 覆盖 标记文件
-    """
+def write_mark_ok(slot_name: str, username: str, traffic: str, expire: str):
     fn = mark_filename(slot_name)
     t = now_bj().strftime("%Y-%m-%d %H:%M:%S")
     content = "\n".join([
         "status=OK",
         f"slot={slot_name}",
+        f"user={username}",
         f"signed_at={t}",
         "tz=Asia/Shanghai",
+        f"traffic_left={traffic}",
+        f"expire_at={expire}",
         "",
     ])
     with open(fn, "w", encoding="utf-8") as f:
@@ -127,7 +124,7 @@ def write_mark_ok(slot_name: str):
 
     log(f"📝 写入签到标记：{fn}（{t}）")
 
-# ========== Chrome 初始化 ==========
+# ========== Chrome ==========
 def init_chrome():
     from webdriver_manager.chrome import ChromeDriverManager
 
@@ -149,7 +146,6 @@ def init_chrome():
     driver.implicitly_wait(10)
     return driver
 
-# ========== 截图 ==========
 def save_screen(driver, name):
     try:
         filename = f"{now_bj().strftime('%Y%m%d_%H%M%S')}_{name}.png"
@@ -158,25 +154,52 @@ def save_screen(driver, name):
     except:
         pass
 
-# ========== 主逻辑 ==========
+# ========== 抓取流量和到期时间 ==========
+def get_traffic_and_expire(driver):
+    traffic = "UNKNOWN"
+    expire = "UNKNOWN"
+
+    try:
+        el = driver.find_element(By.XPATH, "//span[contains(text(),'剩余流量')]")
+        txt = el.text.strip()  # 剩余流量 20GB
+        m = re.search(r'([\d\.]+\s*[A-Z]+)', txt)
+        if m:
+            traffic = m.group(1)
+    except:
+        pass
+
+    try:
+        el2 = driver.find_element(By.XPATH, "//p[contains(text(),'到期')]")
+        txt2 = el2.text.strip()
+        m2 = re.search(r'\((.*?)\)', txt2)
+        if m2:
+            expire = m2.group(1)
+    except:
+        pass
+
+    return traffic, expire
+
+# ========== 主流程 ==========
 def main():
-    slot_name = os.environ.get("SLOT_NAME", "").strip()  # SLOT1 / SLOT2 / SLOT3 / SLOT4
+    slot_name = os.environ.get("SLOT_NAME", "").strip()
     if not slot_name:
         log("❌ 未获取到 SLOT_NAME")
         return
 
-    log(f"🚀 启动自动签到 | 北京时间={now_bj().strftime('%Y-%m-%d %H:%M:%S')} | slot={slot_name}")
+    username = os.environ.get("USERNAME", "").strip()
+    password = os.environ.get("PASSWORD", "").strip()
 
-    # ===== 第一步：检查今天是否已经签过到 =====
+    safe_user = mask_email(username)
+
+    log(f"🚀 启动自动签到 | 北京时间={now_bj().strftime('%Y-%m-%d %H:%M:%S')} | slot={slot_name} | user={safe_user}")
+
+    # ===== 已签检测 =====
     if read_mark_if_signed_today(slot_name):
-        msg = f"🛑 {slot_name} 今日已签到（标记文件判断），本次不再登录"
+        msg = f"🛑 {safe_user} 今日已签到（标记文件），跳过执行"
         log(msg)
         tg_notify(msg)
         return
 
-    # ===== 读取账号密码 =====
-    username = os.environ.get("USERNAME", "").strip()
-    password = os.environ.get("PASSWORD", "").strip()
     if not username or not password:
         log("❌ 未获取到账号或密码")
         return
@@ -184,13 +207,13 @@ def main():
     driver = init_chrome()
 
     try:
-        # ========== 打开登录页 ==========
+        # 打开登录页
         log("🌐 打开登录页")
         driver.get(LOGIN_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         save_screen(driver, "login_page")
 
-        # ========== 输入账号密码 ==========
+        # 输入账号密码
         log("✍️ 输入账号密码")
         email_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "email")))
         pwd_input = driver.find_element(By.ID, "passwd")
@@ -201,7 +224,7 @@ def main():
         pwd_input.send_keys(password)
         save_screen(driver, "filled_form")
 
-        # ========== 登录 ==========
+        # 登录
         log("🔐 点击登录按钮")
         login_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "login-dashboard")))
         login_btn.click()
@@ -211,28 +234,33 @@ def main():
         save_screen(driver, "after_login")
         log("✅ 登录成功")
 
-        # ========== 进入用户中心 ==========
+        # 进入用户中心
         log("🏠 进入用户中心")
         driver.get(USER_CENTER_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         time.sleep(2)
         save_screen(driver, "user_center")
 
-        # ========== 查找签到按钮 ==========
+        # 读取流量和到期时间
+        traffic, expire = get_traffic_and_expire(driver)
+        log(f"📊 剩余流量: {traffic}")
+        log(f"⏳ 到期时间: {expire}")
+
+        # 查找签到按钮
         log("🔍 查找签到按钮")
         sign_btn = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "check-in")))
         btn_text = sign_btn.text.strip()
         log(f"📌 按钮文字：{btn_text}")
 
-        # ========== 如果网页已显示签过 ==========
+        # 如果网页显示已签到
         if "已" in btn_text or "成功" in btn_text:
-            msg = f"🎉 {slot_name} 今日已签到（网页检测）"
+            msg = f"ℹ️ {safe_user} 今日已签到\n📊 剩余流量: {traffic}\n⏳ 到期时间: {expire}"
             log(msg)
-            write_mark_ok(slot_name)
+            write_mark_ok(slot_name, username, traffic, expire)
             tg_notify(msg)
             return
 
-        # ========== 执行签到 ==========
+        # 执行签到
         log("🖱️ 点击签到按钮")
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sign_btn)
         time.sleep(1)
@@ -240,30 +268,30 @@ def main():
         time.sleep(3)
         save_screen(driver, "after_click")
 
-        # ========== 再次检测 ==========
+        # 再次检测
         try:
             sign_btn2 = driver.find_element(By.ID, "check-in")
             new_text = sign_btn2.text.strip()
             log(f"📌 点击后按钮文字：{new_text}")
 
             if "已" in new_text or "成功" in new_text:
-                msg = f"✅ {slot_name} 签到成功"
+                msg = f"✅ {safe_user} 签到成功\n📊 剩余流量: {traffic}\n⏳ 到期时间: {expire}"
                 log(msg)
-                write_mark_ok(slot_name)
+                write_mark_ok(slot_name, username, traffic, expire)
                 tg_notify(msg)
             else:
-                msg = f"⚠️ {slot_name} 签到状态未知（页面可能改版）"
+                msg = f"⚠️ {safe_user} 签到状态未知\n📊 剩余流量: {traffic}\n⏳ 到期时间: {expire}"
                 log(msg)
                 tg_notify(msg)
 
         except:
-            msg = f"✅ {slot_name} 签到成功（按钮已消失）"
+            msg = f"✅ {safe_user} 签到成功（按钮消失）\n📊 剩余流量: {traffic}\n⏳ 到期时间: {expire}"
             log(msg)
-            write_mark_ok(slot_name)
+            write_mark_ok(slot_name, username, traffic, expire)
             tg_notify(msg)
 
     except Exception as e:
-        err = f"❌ {slot_name} 执行异常：{e}"
+        err = f"❌ {safe_user} 执行异常：{e}"
         log(err)
         save_screen(driver, "ERROR")
         tg_notify(err)
