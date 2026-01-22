@@ -23,6 +23,15 @@ on:
     - cron: "20 12 * * *"
 
   workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Force run ignore time window (for test)"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 # ========= 必须给写权限，否则无法提交 SIGNED 文件 =========
 permissions:
@@ -72,28 +81,34 @@ jobs:
             echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
+
+            echo "✅ Selected $SLOT"
           }
 
-          # slot1: UTC 00
+          # ====== 自动按时间选择 ======
           if [ "$UTC_HOUR" = "00" ]; then
             pick_slot "SLOT1"
 
-          # slot2: UTC 04
           elif [ "$UTC_HOUR" = "04" ]; then
             pick_slot "SLOT2"
 
-          # slot3: UTC 08
           elif [ "$UTC_HOUR" = "08" ]; then
             pick_slot "SLOT3"
 
-          # slot4: UTC 12
           elif [ "$UTC_HOUR" = "12" ]; then
             pick_slot "SLOT4"
 
           else
-            echo "Not in any slot window, exit."
-            exit 0
+            # ====== 不在时间窗：只有手动 + force_run=true 才允许 ======
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_run }}" = "true" ]; then
+              echo "🧪 Manual test mode: force run SLOT2"
+              pick_slot "SLOT2"
+            else
+              echo "⏰ Not in any slot window and not forced. Exit."
+              exit 0
+            fi
           fi
+
         env:
           NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
           NW_SLOT1_PASS: ${{ secrets.NW_SLOT1_PASS }}
