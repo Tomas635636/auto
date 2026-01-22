@@ -22,7 +22,6 @@ on:
     - cron: "13 11 * * *"
     - cron: "19 11 * * *"
 
-  # ===== 手动触发：可选 slot 测试 =====
   workflow_dispatch:
     inputs:
       test_slot:
@@ -36,7 +35,6 @@ on:
           - SLOT3
           - SLOT4
 
-# ===== 必须给写权限，否则无法提交 SIGNED 文件 =====
 permissions:
   contents: write
 
@@ -72,35 +70,41 @@ jobs:
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
+            echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
+
+            # ✅ 未配置也不要 exit，让 help.py 去发“未配置”通知
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot $SLOT has no account configured. Exit."
-              exit 0
+              echo "Slot $SLOT has no account configured."
+              echo "SLOT_CONFIGURED=0" >> $GITHUB_ENV
+              echo "USERNAME=" >> $GITHUB_ENV
+              echo "PASSWORD=" >> $GITHUB_ENV
+              return 0
             fi
 
-            echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
+            echo "SLOT_CONFIGURED=1" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
           }
 
-          # ===== 手动触发：用你选择的 slot =====
+          # ===== 手动触发：用你选择的 slot（注意：不再 exit 0）=====
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual run detected, using slot: ${{ inputs.test_slot }}"
             pick_slot "${{ inputs.test_slot }}"
-            exit 0
-          fi
-
-          # ===== 自动定时 =====
-          if [ "$UTC_HOUR" = "23" ]; then
-            pick_slot "SLOT1"
-          elif [ "$UTC_HOUR" = "03" ]; then
-            pick_slot "SLOT2"
-          elif [ "$UTC_HOUR" = "07" ]; then
-            pick_slot "SLOT3"
-          elif [ "$UTC_HOUR" = "11" ]; then
-            pick_slot "SLOT4"
           else
-            echo "Not in any slot window, exit."
-            exit 0
+            # ===== 自动定时 =====
+            if [ "$UTC_HOUR" = "23" ]; then
+              pick_slot "SLOT1"
+            elif [ "$UTC_HOUR" = "03" ]; then
+              pick_slot "SLOT2"
+            elif [ "$UTC_HOUR" = "07" ]; then
+              pick_slot "SLOT3"
+            elif [ "$UTC_HOUR" = "11" ]; then
+              pick_slot "SLOT4"
+            else
+              echo "Not in any slot window, exit."
+              # 不在窗口就直接结束整个 job
+              exit 0
+            fi
           fi
 
         env:
