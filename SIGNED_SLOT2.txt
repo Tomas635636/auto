@@ -1,4 +1,0 @@
-status=OK
-slot=SLOT2
-signed_at=2026-01-22 13:41:34
-tz=Asia/Shanghai
