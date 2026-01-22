@@ -2,27 +2,27 @@ name: Neworld Multi Account Signin
 
 on:
   schedule:
-    # ========== slot1 北京 07:10-07:20 (UTC 23:10-23:20) ==========
-    - cron: "10 23 * * *"
-    - cron: "15 23 * * *"
-    - cron: "20 23 * * *"
+    # ===== SLOT1 北京 07:11 / 07:17 / 07:23 =====
+    - cron: "11 23 * * *"
+    - cron: "17 23 * * *"
+    - cron: "23 23 * * *"
 
-    # ========== slot2 北京 11:10-11:20 (UTC 03:10-03:20) ==========
-    - cron: "10 3 * * *"
-    - cron: "15 3 * * *"
-    - cron: "20 3 * * *"
+    # ===== SLOT2 北京 11:09 / 11:16 / 11:22 =====
+    - cron: "9 3 * * *"
+    - cron: "16 3 * * *"
+    - cron: "22 3 * * *"
 
-    # ========== slot3 北京 15:10-15:20 (UTC 07:10-07:20) ==========
-    - cron: "10 7 * * *"
-    - cron: "15 7 * * *"
-    - cron: "20 7 * * *"
+    # ===== SLOT3 北京 15:08 / 15:14 / 15:21 =====
+    - cron: "8 7 * * *"
+    - cron: "14 7 * * *"
+    - cron: "21 7 * * *"
 
-    # ========== slot4 北京 19:10-19:20 (UTC 11:10-11:20) ==========
-    - cron: "10 11 * * *"
-    - cron: "15 11 * * *"
-    - cron: "20 11 * * *"
+    # ===== SLOT4 北京 19:07 / 19:13 / 19:19 =====
+    - cron: "7 11 * * *"
+    - cron: "13 11 * * *"
+    - cron: "19 11 * * *"
 
-  # ======== 手动触发：可选 slot 测试 ========
+  # ===== 手动触发：可选 slot 测试 =====
   workflow_dispatch:
     inputs:
       test_slot:
@@ -36,7 +36,7 @@ on:
           - SLOT3
           - SLOT4
 
-# ======== 必须给写权限，否则无法提交 SIGNED 文件 ========
+# ===== 必须给写权限，否则无法提交 SIGNED 文件 =====
 permissions:
   contents: write
 
@@ -90,13 +90,13 @@ jobs:
           fi
 
           # ===== 自动定时 =====
-          if [ "$UTC_HOUR" = "00" ]; then
+          if [ "$UTC_HOUR" = "23" ]; then
             pick_slot "SLOT1"
-          elif [ "$UTC_HOUR" = "04" ]; then
+          elif [ "$UTC_HOUR" = "03" ]; then
             pick_slot "SLOT2"
-          elif [ "$UTC_HOUR" = "08" ]; then
+          elif [ "$UTC_HOUR" = "07" ]; then
             pick_slot "SLOT3"
-          elif [ "$UTC_HOUR" = "12" ]; then
+          elif [ "$UTC_HOUR" = "11" ]; then
             pick_slot "SLOT4"
           else
             echo "Not in any slot window, exit."
