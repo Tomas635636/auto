@@ -2,38 +2,54 @@ name: Neworld Multi Account Signin
 
 on:
   schedule:
-    # ========== slot1 北京 08:10-08:20 (UTC 00:10-00:20) ==========
-    - cron: "10 0 * * *"
-    - cron: "15 0 * * *"
-    - cron: "20 0 * * *"
+    # =========================================================
+    # 说明：
+    # GitHub Actions 使用 UTC 时间
+    # 你的脚本内部使用 Asia/Shanghai（北京时间）
+    #
+    # 每个 slot 都提前一点时间 + 3 次兜底触发
+    # 只要成功一次，后面就会因为 SIGNED_SLOT?.txt 直接跳过
+    # =========================================================
 
-    # ========== slot2 北京 12:10-12:20 (UTC 04:10-04:20) ==========
-    - cron: "10 4 * * *"
-    - cron: "15 4 * * *"
-    - cron: "20 4 * * *"
+    # ================= SLOT1（北京时间 07:40 / 07:45 / 07:50） =================
+    # 北京时间 07:40 = UTC 23:40（前一天）
+    - cron: "40 23 * * *"
+    # 北京时间 07:45 = UTC 23:45（前一天）
+    - cron: "45 23 * * *"
+    # 北京时间 07:50 = UTC 23:50（前一天）
+    - cron: "50 23 * * *"
 
-    # ========== slot3 北京 16:10-16:20 (UTC 08:10-08:20) ==========
-    - cron: "10 8 * * *"
-    - cron: "15 8 * * *"
-    - cron: "20 8 * * *"
+    # ================= SLOT2（北京时间 11:40 / 11:45 / 11:50） =================
+    # 北京时间 11:40 = UTC 03:40
+    - cron: "40 3 * * *"
+    # 北京时间 11:45 = UTC 03:45
+    - cron: "45 3 * * *"
+    # 北京时间 11:50 = UTC 03:50
+    - cron: "50 3 * * *"
 
-    # ========== slot4 北京 20:10-20:20 (UTC 12:10-12:20) ==========
-    - cron: "10 12 * * *"
-    - cron: "15 12 * * *"
-    - cron: "20 12 * * *"
+    # ================= SLOT3（北京时间 15:40 / 15:45 / 15:50） =================
+    # 北京时间 15:40 = UTC 07:40
+    - cron: "40 7 * * *"
+    # 北京时间 15:45 = UTC 07:45
+    - cron: "45 7 * * *"
+    # 北京时间 15:50 = UTC 07:50
+    - cron: "50 7 * * *"
 
+    # ================= SLOT4（北京时间 19:40 / 19:45 / 19:50） =================
+    # 北京时间 19:40 = UTC 11:40
+    - cron: "40 11 * * *"
+    # 北京时间 19:45 = UTC 11:45
+    - cron: "45 11 * * *"
+    # 北京时间 19:50 = UTC 11:50
+    - cron: "50 11 * * *"
+
+  # 允许你在 GitHub 页面手动点击 Run workflow 测试
   workflow_dispatch:
-    inputs:
-      force_run:
-        description: "Force run ignore time window (for test)"
-        required: true
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
-# ========= 必须给写权限，否则无法提交 SIGNED 文件 =========
+# =========================================================
+# 非常重要：
+# 必须给 contents: write 权限，否则无法提交 SIGNED_SLOT?.txt
+# =========================================================
 permissions:
   contents: write
 
@@ -42,29 +58,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ========== 拉取仓库 ==========
+      # ========== 1. 拉取仓库代码 ==========
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # ========== Python 环境 ==========
+      # ========== 2. 安装 Python ==========
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      # ========== 安装依赖 ==========
+      # ========== 3. 安装依赖 ==========
       - name: Install dependencies
         run: |
           pip install selenium webdriver-manager requests
 
-      # ========== 根据 UTC 时间选择 slot ==========
+      # ========== 4. 根据当前 UTC 时间判断跑哪个 slot ==========
       - name: Select account by time slot
         shell: bash
         run: |
+          # 取当前 UTC 小时和分钟
           UTC_HOUR=$(date -u +"%H")
           UTC_MIN=$(date -u +"%M")
-          echo "UTC time: $UTC_HOUR:$UTC_MIN"
+          echo "Current UTC time: $UTC_HOUR:$UTC_MIN"
 
+          # ---------- 选择某个 slot 并注入环境变量 ----------
           pick_slot() {
             SLOT="$1"
             USER_VAR="NW_${SLOT}_USER"
@@ -73,42 +91,45 @@ jobs:
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
+            # 如果 Secrets 里没配置这个 slot，就直接退出
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot $SLOT has no account configured. Exit."
+              echo "Slot $SLOT has no account configured, skip."
               exit 0
             fi
 
+            # 写入环境变量，供 help.py 使用
             echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
-
-            echo "✅ Selected $SLOT"
           }
 
-          # ====== 自动按时间选择 ======
-          if [ "$UTC_HOUR" = "00" ]; then
+          # ---------- 定时触发：根据 UTC 小时判断 slot ----------
+          if [ "$UTC_HOUR" = "23" ]; then
+            # 对应 北京时间 07:xx → SLOT1
             pick_slot "SLOT1"
 
-          elif [ "$UTC_HOUR" = "04" ]; then
+          elif [ "$UTC_HOUR" = "03" ]; then
+            # 对应 北京时间 11:xx → SLOT2
             pick_slot "SLOT2"
 
-          elif [ "$UTC_HOUR" = "08" ]; then
+          elif [ "$UTC_HOUR" = "07" ]; then
+            # 对应 北京时间 15:xx → SLOT3
             pick_slot "SLOT3"
 
-          elif [ "$UTC_HOUR" = "12" ]; then
+          elif [ "$UTC_HOUR" = "11" ]; then
+            # 对应 北京时间 19:xx → SLOT4
             pick_slot "SLOT4"
 
           else
-            # ====== 不在时间窗：只有手动 + force_run=true 才允许 ======
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_run }}" = "true" ]; then
-              echo "🧪 Manual test mode: force run SLOT2"
+            # ---------- 手动触发时，强制用 SLOT2 做测试 ----------
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Manual run detected, force SLOT2 for test"
               pick_slot "SLOT2"
             else
-              echo "⏰ Not in any slot window and not forced. Exit."
+              echo "Not in any slot window, exit."
               exit 0
             fi
           fi
-
         env:
           NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
           NW_SLOT1_PASS: ${{ secrets.NW_SLOT1_PASS }}
@@ -119,16 +140,16 @@ jobs:
           NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
           NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
 
-      # ========== 运行签到脚本 ==========
-      - name: Run signin
+      # ========== 5. 运行签到脚本 ==========
+      - name: Run signin script
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python help.py
 
-      # ========== 提交签到标记文件 ==========
-      - name: Commit mark
+      # ========== 6. 提交 SIGNED_SLOT?.txt（跨运行记忆核心） ==========
+      - name: Commit mark files
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "bot@github.com"
@@ -141,8 +162,8 @@ jobs:
             echo "No SIGNED file generated"
           fi
 
-      # ========== 上传日志和截图 ==========
-      - name: Upload logs
+      # ========== 7. 上传日志 + 截图 ==========
+      - name: Upload logs and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
