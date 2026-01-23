@@ -1,11 +1,11 @@
 name: Neworld Multi Account Signin
 
 on:
-  # ===== 手动触发（用于测试） =====
+  # ===== 仅保留手动 / Worker 触发 =====
   workflow_dispatch:
     inputs:
       test_slot:
-        description: "选择要测试的账号槽位（SLOT1~SLOT4）"
+        description: "选择要运行的账号槽位（SLOT1~SLOT4）"
         required: true
         default: "SLOT2"
         type: choice
@@ -35,48 +35,32 @@ jobs:
         run: |
           pip install selenium webdriver-manager requests
 
-      # ========== 根据 UTC 时间或手动输入选择 slot ==========
-      - name: Select account by time slot
+      # ========== 根据 Worker 传入的 slot 选择账号 ==========
+      - name: Select account by slot input
         shell: bash
         run: |
-          UTC_HOUR=$(date -u +"%H")
-          UTC_MIN=$(date -u +"%M")
-          echo "UTC time: $UTC_HOUR:$UTC_MIN"
+          SLOT="${{ inputs.test_slot }}"
+          echo "Using slot: $SLOT"
 
           pick_slot() {
-            SLOT="$1"
-            USER_VAR="NW_${SLOT}_USER"
-            PASS_VAR="NW_${SLOT}_PASS"
+            SLOT_NAME="$1"
+            USER_VAR="NW_${SLOT_NAME}_USER"
+            PASS_VAR="NW_${SLOT_NAME}_PASS"
 
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
-            echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
+            if [ -z "$USER" ] || [ -z "$PASS" ]; then
+              echo "ERROR: Missing secrets for $SLOT_NAME"
+              exit 1
+            fi
+
+            echo "SLOT_NAME=$SLOT_NAME" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
           }
 
-          # ===== 手动触发：用你选择的 slot =====
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual run detected, using slot: ${{ inputs.test_slot }}"
-            echo "MANUAL_SLOT=${{ inputs.test_slot }}" >> $GITHUB_ENV
-            pick_slot "${{ inputs.test_slot }}"
-            exit 0
-          fi
-
-          # ===== 自动定时：按 UTC 小时选 slot（粗分流，真正防重复在 help.py） =====
-          if [ "$UTC_HOUR" -ge 0 ] && [ "$UTC_HOUR" -lt 4 ]; then
-            pick_slot "SLOT1"
-          elif [ "$UTC_HOUR" -ge 3 ] && [ "$UTC_HOUR" -lt 7 ]; then
-            pick_slot "SLOT2"
-          elif [ "$UTC_HOUR" -ge 7 ] && [ "$UTC_HOUR" -lt 11 ]; then
-            pick_slot "SLOT3"
-          elif [ "$UTC_HOUR" -ge 11 ] && [ "$UTC_HOUR" -lt 15 ]; then
-            pick_slot "SLOT4"
-          else
-            echo "Not in any slot window, exit."
-            exit 0
-          fi
+          pick_slot "$SLOT"
 
         env:
           NW_SLOT1_USER: ${{ secrets.NW_SLOT1_USER }}
@@ -94,6 +78,10 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          echo "===================================="
+          echo "Running slot: $SLOT_NAME"
+          echo "Using user: $USERNAME"
+          echo "===================================="
           python help.py
 
       # ========== 提交 SIGNED 文件 ==========
