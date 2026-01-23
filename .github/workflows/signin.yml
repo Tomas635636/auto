@@ -2,25 +2,30 @@ name: Neworld Multi Account Signin
 
 on:
   schedule:
-    # ===== SLOT1 北京 07:11 / 07:17 / 07:23 =====
-    - cron: "11 23 * * *"
-    - cron: "17 23 * * *"
-    - cron: "23 23 * * *"
+    # ===== Slot1: 00:00 ~ 04:00 UTC =====
+    # 多次触发兜底
+    - cron: "0 0 * * *"
+    - cron: "0 1 * * *"
+    - cron: "0 2 * * *"
+    - cron: "0 3 * * *"
 
-    # ===== SLOT2 北京 11:09 / 11:16 / 11:22 =====
-    - cron: "9 3 * * *"
-    - cron: "16 3 * * *"
-    - cron: "22 3 * * *"
+    # ===== Slot2: 03:05 ~ 07:05 UTC =====
+    - cron: "10 3 * * *"
+    - cron: "10 4 * * *"
+    - cron: "10 5 * * *"
+    - cron: "10 6 * * *"
 
-    # ===== SLOT3 北京 15:08 / 15:14 / 15:21 =====
-    - cron: "8 7 * * *"
-    - cron: "14 7 * * *"
-    - cron: "21 7 * * *"
+    # ===== Slot3: 07:05 ~ 11:05 UTC =====
+    - cron: "10 7 * * *"
+    - cron: "10 8 * * *"
+    - cron: "10 9 * * *"
+    - cron: "10 10 * * *"
 
-    # ===== SLOT4 北京 19:07 / 19:13 / 19:19 =====
-    - cron: "7 11 * * *"
-    - cron: "13 11 * * *"
-    - cron: "19 11 * * *"
+    # ===== Slot4: 11:05 ~ 15:05 UTC =====
+    - cron: "10 11 * * *"
+    - cron: "10 12 * * *"
+    - cron: "10 13 * * *"
+    - cron: "10 14 * * *"
 
   # ===== 手动触发（用于测试） =====
   workflow_dispatch:
@@ -36,7 +41,6 @@ on:
           - SLOT3
           - SLOT4
 
-# ===== 必须给写权限，否则无法提交 SIGNED 文件 =====
 permissions:
   contents: write
 
@@ -73,11 +77,6 @@ jobs:
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
-            if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "Slot $SLOT has no account configured. Exit."
-              exit 0
-            fi
-
             echo "SLOT_NAME=$SLOT" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
@@ -86,18 +85,19 @@ jobs:
           # ===== 手动触发：用你选择的 slot =====
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual run detected, using slot: ${{ inputs.test_slot }}"
+            echo "MANUAL_SLOT=${{ inputs.test_slot }}" >> $GITHUB_ENV
             pick_slot "${{ inputs.test_slot }}"
             exit 0
           fi
 
-          # ===== 自动定时 =====
-          if [ "$UTC_HOUR" = "23" ]; then
+          # ===== 自动定时：按 UTC 小时选 slot =====
+          if [ "$UTC_HOUR" -ge 0 ] && [ "$UTC_HOUR" -lt 4 ]; then
             pick_slot "SLOT1"
-          elif [ "$UTC_HOUR" = "03" ]; then
+          elif [ "$UTC_HOUR" -ge 3 ] && [ "$UTC_HOUR" -lt 7 ]; then
             pick_slot "SLOT2"
-          elif [ "$UTC_HOUR" = "07" ]; then
+          elif [ "$UTC_HOUR" -ge 7 ] && [ "$UTC_HOUR" -lt 11 ]; then
             pick_slot "SLOT3"
-          elif [ "$UTC_HOUR" = "11" ]; then
+          elif [ "$UTC_HOUR" -ge 11 ] && [ "$UTC_HOUR" -lt 15 ]; then
             pick_slot "SLOT4"
           else
             echo "Not in any slot window, exit."
@@ -122,13 +122,13 @@ jobs:
         run: |
           python help.py
 
-      # ========== 只提交 SIGNED 文件 ==========
+      # ========== 提交 SIGNED 文件 ==========
       - name: Commit signin logs
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "bot@github.com"
 
-          git add SIGNED_SLOT*.txt || true
+          git add SIGNED_*.txt || true
           git commit -m "chore: update signin logs" || echo "Nothing to commit"
           git push || true
 
@@ -141,4 +141,4 @@ jobs:
           path: |
             *.png
             run.log
-            SIGNED_SLOT*.txt
+            SIGNED_*.txt
