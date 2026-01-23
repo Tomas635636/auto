@@ -115,7 +115,6 @@ def has_final_status_today(slot_name: str) -> bool:
     """
     只在【今天】的记录里，检查【状态字段】是否为：
       SUCCESS / ALREADY_DONE / CHECK_NO_CONFIG
-    只要出现一次，就表示今天该 slot 已经最终结束。
     """
     path = signed_file_path(slot_name)
     if not os.path.exists(path):
@@ -125,11 +124,9 @@ def has_final_status_today(slot_name: str) -> bool:
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
-                # 行首必须是今天日期
                 if not line.startswith(today + " "):
                     continue
                 parts = [p.strip() for p in line.split("|")]
-                # 结构: 时间 | slot | email | status | ...
                 if len(parts) >= 4:
                     status = parts[3]
                     if status in FINAL_STATUSES:
@@ -150,23 +147,39 @@ def append_signed_log(slot_name: str, status: str, email_masked: str,
 
 # ========== 从用户中心页面提取“剩余流量 / 到期时间”==========
 def extract_remaining_and_expire(driver):
+    """
+    解析策略：
+    1) 优先：只在“包含【到期】”的那一行/段里抓时间
+    2) 如果失败：从全文抓所有 YYYY-MM-DD HH:MM:SS，取“最大的那个”（最晚时间）
+       —— 公告时间一定比到期时间早，所以最大的一定是到期时间
+    """
+
     remaining = "-"
     expire_at = "-"
+
     try:
         body_text = driver.find_element(By.TAG_NAME, "body").text
     except:
         body_text = ""
 
+    # ===== 剩余流量 =====
     m1 = re.search(r"剩余流量\s*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|TB))", body_text, re.IGNORECASE)
     if m1:
         remaining = m1.group(1).replace(" ", "")
 
+    # ===== 到期时间（优先：只在包含“到期”的行里抓）=====
     for line in body_text.splitlines():
         if "到期" in line:
             m2 = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", line)
             if m2:
                 expire_at = m2.group(1)
                 break
+
+    # ===== 兜底：如果上面没抓到，从全文取“最大的时间”=====
+    if expire_at == "-":
+        all_times = re.findall(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", body_text)
+        if all_times:
+            expire_at = max(all_times)
 
     return remaining, expire_at
 
@@ -206,7 +219,7 @@ def main():
     driver = init_chrome()
 
     try:
-        # ===== Selenium 登录流程（原样保留）=====
+        # ===== Selenium 登录流程 =====
         log("🌐 打开登录页")
         driver.get(LOGIN_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
