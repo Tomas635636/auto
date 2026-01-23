@@ -50,11 +50,17 @@ jobs:
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
+            # ===== 如果没配置：标记并正常退出 =====
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
-              echo "ERROR: Missing secrets for $SLOT_NAME"
-              exit 1
+              echo "⚠️ Slot $SLOT_NAME is not configured, skipping."
+
+              echo "SKIP_RUN=1" >> $GITHUB_ENV
+              echo "SLOT_NAME=$SLOT_NAME" >> $GITHUB_ENV
+
+              exit 0
             fi
 
+            echo "SKIP_RUN=0" >> $GITHUB_ENV
             echo "SLOT_NAME=$SLOT_NAME" >> $GITHUB_ENV
             echo "USERNAME=$USER" >> $GITHUB_ENV
             echo "PASSWORD=$PASS" >> $GITHUB_ENV
@@ -72,8 +78,9 @@ jobs:
           NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
           NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
 
-      # ========== 执行签到 ==========
+      # ========== 执行签到（仅当没有被跳过） ==========
       - name: Run signin
+        if: env.SKIP_RUN != '1'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -86,6 +93,7 @@ jobs:
 
       # ========== 提交 SIGNED 文件 ==========
       - name: Commit signin logs
+        if: env.SKIP_RUN != '1'
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "bot@github.com"
