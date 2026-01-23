@@ -7,7 +7,7 @@ on:
       test_slot:
         description: "选择要运行的账号槽位（SLOT1~SLOT4）"
         required: true
-        default: "SLOT2"
+        default: "SLOT1"
         type: choice
         options:
           - SLOT1
