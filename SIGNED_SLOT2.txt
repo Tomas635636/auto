@@ -1,1 +1,2 @@
 2026-01-22 20:23:14 | SLOT2 | 63***07@q***.com | ALREADY | remaining=20.24GB | expire=- | detail=btn=已签到
+2026-01-23 14:57:53 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=20.24GB | expire=- | detail=clicked
