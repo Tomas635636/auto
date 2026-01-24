@@ -1,1 +1,2 @@
 
+2026-01-24 12:04:31 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=20.73GB | expire=2026-01-23 14:57:50 | detail=clicked
