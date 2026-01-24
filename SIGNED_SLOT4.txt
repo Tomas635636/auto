@@ -1,0 +1,1 @@
+2026-01-24 20:03:21 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=20.49GB | expire=2026-01-25 00:03:14 | detail=clicked+refresh
