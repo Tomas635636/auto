@@ -1,4 +1,4 @@
-# Neworld 自动签到脚本（多账号 slot + 跨运行记忆 + Telegram 通知 + 流量/到期抓取 + 失败自动重试）
+# Neworld 自动签到脚本（多账号 slot + 跨运行记忆 + Telegram 通知 + 流量/到期抓取）【最终修复版】
 
 import os
 import re
@@ -17,10 +17,6 @@ LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
 
 LOG_FILE = "run.log"
-
-# ========== 重试参数 ==========
-MAX_RETRY = 2          # 失败后最多再重试 2 次（总共最多跑 3 次）
-RETRY_SLEEP = 30       # 每次失败后等待 30 秒再试
 
 # ========== 日志 ==========
 logging.basicConfig(
@@ -124,7 +120,7 @@ def has_final_status_today(slot_name: str) -> bool:
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
-                if not line.startswith(today):
+                if not line.startswith(today + " "):
                     continue
                 parts = [p.strip() for p in line.split("|")]
                 if len(parts) >= 4:
@@ -145,7 +141,7 @@ def append_signed_log(slot_name: str, status: str, email_masked: str,
     with open(path, "a", encoding="utf-8") as f:
         f.write(line)
 
-# ========== 从用户中心页面提取“剩余流量 / 到期时间”==========
+# ========== 提取剩余流量 / 到期 ==========
 def extract_remaining_and_expire(driver):
     remaining = "-"
     expire_at = "-"
@@ -173,9 +169,39 @@ def extract_remaining_and_expire(driver):
 
     return remaining, expire_at
 
-# ========== 单次执行签到 ==========
-def run_once(slot_name, username, password, email_masked):
+# ========== 主流程 ==========
+def main():
+    slot_name = os.environ.get("SLOT_NAME", "").strip() or "UNKNOWN_SLOT"
+    username = os.environ.get("USERNAME", "").strip()
+    password = os.environ.get("PASSWORD", "").strip()
+
+    manual_slot = os.environ.get("MANUAL_SLOT", "").strip()
+    MANUAL_TEST_MODE = bool(manual_slot)
+
+    email_masked = mask_email(username)
+
+    log("🚀 启动自动签到脚本")
+    log(f"🧩 当前 slot: {slot_name} | 账号: {email_masked}")
+
+    if MANUAL_TEST_MODE:
+        log("🧪 当前为【手动测试模式】→ 忽略时间与历史标记，强制执行一次")
+
+    if not MANUAL_TEST_MODE:
+        if has_final_status_today(slot_name):
+            msg = f"✅ {slot_name} 今日已完成，跳过执行\n账号：{email_masked}"
+            log(msg)
+            tg_notify(msg)
+            return
+
+    if not username or not password:
+        append_signed_log(slot_name, "CHECK_NO_CONFIG", email_masked, "-", "-", "missing secrets")
+        msg = f"⚠️ {slot_name} 未配置账号密码\n账号：{email_masked}"
+        log(msg)
+        tg_notify(msg)
+        return
+
     driver = init_chrome()
+
     try:
         log("🌐 打开登录页")
         driver.get(LOGIN_URL)
@@ -207,18 +233,23 @@ def run_once(slot_name, username, password, email_masked):
         time.sleep(2)
         save_screen(driver, "user_center")
 
-        remaining, expire_at = extract_remaining_and_expire(driver)
-        log(f"📦 剩余流量：{remaining} | ⏳ 到期时间：{expire_at}")
+        remaining_before, expire_before = extract_remaining_and_expire(driver)
+        log(f"📦 当前剩余：{remaining_before} | 当前到期：{expire_before}")
 
         sign_btn = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "check-in")))
         btn_text = (sign_btn.text or "").strip()
         log(f"📌 签到按钮文字：{btn_text}")
 
         if ("已" in btn_text) or ("成功" in btn_text):
-            append_signed_log(slot_name, "ALREADY_DONE", email_masked, remaining, expire_at, f"btn={btn_text}")
-            msg = f"✅ {slot_name} 已签到\n账号：{email_masked}\n剩余流量：{remaining}\n到期时间：{expire_at}"
+            append_signed_log(slot_name, "ALREADY_DONE", email_masked, remaining_before, expire_before, f"btn={btn_text}")
+            msg = (
+                f"✅ {slot_name} 已签到\n"
+                f"账号：{email_masked}\n"
+                f"剩余流量：{remaining_before}\n"
+                f"到期时间：{expire_before}"
+            )
             tg_notify(msg)
-            return True
+            return
 
         log("🖱️ 点击签到按钮")
         driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sign_btn)
@@ -227,64 +258,39 @@ def run_once(slot_name, username, password, email_masked):
         time.sleep(3)
         save_screen(driver, "after_click")
 
-        append_signed_log(slot_name, "SUCCESS", email_masked, remaining, expire_at, "clicked")
-        msg = f"✅ {slot_name} 签到成功\n账号：{email_masked}\n剩余流量：{remaining}\n到期时间：{expire_at}"
+        log("🔄 刷新页面以获取最新信息")
+        driver.refresh()
+        WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
+        time.sleep(2)
+        save_screen(driver, "after_refresh")
+
+        remaining_after, expire_after = extract_remaining_and_expire(driver)
+        log(f"📦 更新后剩余：{remaining_after} | 更新后到期：{expire_after}")
+
+        append_signed_log(slot_name, "SUCCESS", email_masked, remaining_after, expire_after, "clicked+refresh")
+
+        msg = (
+            f"✅ {slot_name} 签到成功\n"
+            f"账号：{email_masked}\n"
+            f"剩余流量：{remaining_after}\n"
+            f"到期时间：{expire_after}"
+        )
         tg_notify(msg)
         log("🎉 签到完成")
-        return True
+
+    except Exception as e:
+        save_screen(driver, "ERROR")
+        append_signed_log(slot_name, "FAILED", email_masked, "-", "-", f"{type(e).__name__}: {e}")
+        msg = f"❌ {slot_name} 签到失败\n账号：{email_masked}\n错误：{type(e).__name__}: {e}"
+        log(msg)
+        tg_notify(msg)
 
     finally:
         try:
             driver.quit()
         except:
             pass
-
-# ========== 主流程 ==========
-def main():
-    slot_name = os.environ.get("SLOT_NAME", "").strip() or "UNKNOWN_SLOT"
-    username = os.environ.get("USERNAME", "").strip()
-    password = os.environ.get("PASSWORD", "").strip()
-
-    email_masked = mask_email(username)
-
-    log("🚀 启动自动签到脚本")
-    log(f"🧩 当前 slot: {slot_name} | 账号: {email_masked}")
-
-    if has_final_status_today(slot_name):
-        msg = f"✅ {slot_name} 今日已完成（SUCCESS / ALREADY_DONE / CHECK_NO_CONFIG），跳过\n账号：{email_masked}"
-        log(msg)
-        tg_notify(msg)
-        return
-
-    if not username or not password:
-        append_signed_log(slot_name, "CHECK_NO_CONFIG", email_masked, "-", "-", "missing secrets")
-        msg = f"⚠️ {slot_name} 未配置账号密码\n账号：{email_masked}"
-        log(msg)
-        tg_notify(msg)
-        return
-
-    last_error = None
-
-    for attempt in range(1, MAX_RETRY + 2):
-        try:
-            log(f"🔁 尝试第 {attempt} 次执行...")
-            ok = run_once(slot_name, username, password, email_masked)
-            if ok:
-                return
-        except Exception as e:
-            last_error = e
-            log(f"❌ 第 {attempt} 次执行失败：{type(e).__name__}: {e}")
-
-        if attempt <= MAX_RETRY:
-            log(f"⏳ 等待 {RETRY_SLEEP} 秒后重试...")
-            time.sleep(RETRY_SLEEP)
-
-    append_signed_log(slot_name, "FAILED", email_masked, "-", "-", f"{type(last_error).__name__}: {last_error}")
-    msg = f"❌ {slot_name} 多次重试后仍然失败\n账号：{email_masked}\n错误：{type(last_error).__name__}: {last_error}"
-    log(msg)
-    tg_notify(msg)
-
-    log("🛑 脚本结束")
+        log("🛑 脚本结束")
 
 if __name__ == "__main__":
     main()
