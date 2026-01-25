@@ -1,4 +1,5 @@
-# Neworld 自动签到脚本（多账号 slot + 跨运行记忆 + Telegram 通知 + 流量/到期抓取）【最终修复版】
+# Neworld 自动签到脚本（多账号 slot + 跨运行记忆 + Telegram 通知 + 流量/到期抓取 + 强制刷新）
+# Ultimate Stable Edition
 
 import os
 import re
@@ -13,12 +14,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# ================= 基本配置 =================
 LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
-
 LOG_FILE = "run.log"
 
-# ========== 日志 ==========
+# ================= 日志 =================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -28,26 +29,26 @@ logging.basicConfig(
     ]
 )
 
-def log(msg: str):
+def log(msg):
     logging.info(msg)
 
-# ========== 时区（北京时间）==========
+# ================= 时区 =================
 CN_TZ = timezone(timedelta(hours=8))
 
-def now_cn() -> datetime:
+def now_cn():
     return datetime.now(CN_TZ)
 
-def today_cn_str() -> str:
+def today_cn_str():
     return now_cn().strftime("%Y-%m-%d")
 
-def ts_cn_str() -> str:
+def ts_cn_str():
     return now_cn().strftime("%Y-%m-%d %H:%M:%S")
 
-# ========== Telegram 通知 ==========
+# ================= Telegram =================
 TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
 
-def tg_notify(text: str):
+def tg_notify(text):
     if not TG_TOKEN or not TG_CHAT_ID:
         return
     try:
@@ -56,241 +57,189 @@ def tg_notify(text: str):
     except:
         pass
 
-# ========== 邮箱脱敏 ==========
-def mask_email(email: str) -> str:
+# ================= 工具函数 =================
+def mask_email(email):
     email = (email or "").strip()
     if "@" not in email:
         return "***"
     name, domain = email.split("@", 1)
-    if len(name) <= 2:
-        name_mask = name[0] + "***"
-    else:
-        name_mask = name[:2] + "***" + name[-2:]
-    if "." in domain:
-        d0 = domain.split(".")[0]
-        suffix = "." + ".".join(domain.split(".")[1:])
-    else:
-        d0, suffix = domain, ""
-    d0_mask = (d0[:1] if d0 else "x") + "***"
-    return f"{name_mask}@{d0_mask}{suffix}"
+    return name[:2] + "***@" + domain[:2] + "***"
 
-# ========== Chrome 初始化 ==========
 def init_chrome():
     from webdriver_manager.chrome import ChromeDriverManager
 
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-
-    chrome_options.add_argument(
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    )
+    options = webdriver.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(
         service=Service(ChromeDriverManager().install()),
-        options=chrome_options
+        options=options
     )
     driver.implicitly_wait(10)
     return driver
 
-def save_screen(driver, name: str):
+def save_screen(driver, name):
     try:
-        filename = f"{now_cn().strftime('%Y%m%d_%H%M%S')}_{name}.png"
-        driver.save_screenshot(filename)
-        log(f"📸 已保存截图: {filename}")
+        fn = f"{now_cn().strftime('%Y%m%d_%H%M%S')}_{name}.png"
+        driver.save_screenshot(fn)
+        log(f"📸 Screenshot saved: {fn}")
     except:
         pass
 
-# ========== SIGNED 文件 ==========
-def signed_file_path(slot_name: str) -> str:
-    return f"SIGNED_{slot_name}.txt"
+# ================= SIGNED 文件 =================
+def signed_file_path(slot):
+    return f"SIGNED_{slot}.txt"
 
 FINAL_STATUSES = {"SUCCESS", "ALREADY_DONE", "CHECK_NO_CONFIG"}
 
-def has_final_status_today(slot_name: str) -> bool:
-    path = signed_file_path(slot_name)
+def has_final_status_today(slot):
+    path = signed_file_path(slot)
     if not os.path.exists(path):
         return False
-
     today = today_cn_str()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.startswith(today + " "):
-                    continue
-                parts = [p.strip() for p in line.split("|")]
-                if len(parts) >= 4:
-                    status = parts[3]
-                    if status in FINAL_STATUSES:
-                        return True
-    except:
-        return False
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith(today):
+                if any(s in line for s in FINAL_STATUSES):
+                    return True
     return False
 
-def append_signed_log(slot_name: str, status: str, email_masked: str,
-                      remaining: str = "-", expire_at: str = "-", detail: str = "-"):
-    line = (
-        f"{ts_cn_str()} | {slot_name} | {email_masked} | {status} | "
-        f"remaining={remaining} | expire={expire_at} | detail={detail}\n"
-    )
-    path = signed_file_path(slot_name)
-    with open(path, "a", encoding="utf-8") as f:
+def append_signed_log(slot, status, email, remaining="-", expire="-", detail="-"):
+    line = f"{ts_cn_str()} | {slot} | {email} | {status} | remaining={remaining} | expire={expire} | detail={detail}\n"
+    with open(signed_file_path(slot), "a", encoding="utf-8") as f:
         f.write(line)
 
-# ========== 提取剩余流量 / 到期 ==========
+# ================= 页面解析 =================
 def extract_remaining_and_expire(driver):
-    remaining = "-"
-    expire_at = "-"
-
     try:
-        body_text = driver.find_element(By.TAG_NAME, "body").text
+        body = driver.find_element(By.TAG_NAME, "body").text
     except:
-        body_text = ""
+        body = ""
 
-    m1 = re.search(r"剩余流量\s*([0-9]+(?:\.[0-9]+)?\s*(?:GB|MB|TB))", body_text, re.IGNORECASE)
+    remaining = "-"
+    expire = "-"
+
+    m1 = re.search(r"剩余流量\s*([0-9.]+\s*(?:GB|MB|TB))", body)
     if m1:
         remaining = m1.group(1).replace(" ", "")
 
-    for line in body_text.splitlines():
-        if "到期" in line:
-            m2 = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", line)
-            if m2:
-                expire_at = m2.group(1)
-                break
+    times = re.findall(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", body)
+    if times:
+        expire = max(times)
 
-    if expire_at == "-":
-        all_times = re.findall(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", body_text)
-        if all_times:
-            expire_at = max(all_times)
+    return remaining, expire
 
-    return remaining, expire_at
-
-# ========== 主流程 ==========
+# ================= 主流程 =================
 def main():
-    slot_name = os.environ.get("SLOT_NAME", "").strip() or "UNKNOWN_SLOT"
-    username = os.environ.get("USERNAME", "").strip()
-    password = os.environ.get("PASSWORD", "").strip()
-
-    manual_slot = os.environ.get("MANUAL_SLOT", "").strip()
-    MANUAL_TEST_MODE = bool(manual_slot)
-
+    slot = os.environ.get("SLOT_NAME", "UNKNOWN_SLOT")
+    username = os.environ.get("USERNAME", "")
+    password = os.environ.get("PASSWORD", "")
     email_masked = mask_email(username)
 
-    log("🚀 启动自动签到脚本")
-    log(f"🧩 当前 slot: {slot_name} | 账号: {email_masked}")
+    log(f"🚀 Start signin | Slot={slot} | Account={email_masked}")
 
-    if MANUAL_TEST_MODE:
-        log("🧪 当前为【手动测试模式】→ 忽略时间与历史标记，强制执行一次")
-
-    if not MANUAL_TEST_MODE:
-        if has_final_status_today(slot_name):
-            msg = f"✅ {slot_name} 今日已完成，跳过执行\n账号：{email_masked}"
-            log(msg)
-            tg_notify(msg)
-            return
-
+    # ===== 未配置 =====
     if not username or not password:
-        append_signed_log(slot_name, "CHECK_NO_CONFIG", email_masked, "-", "-", "missing secrets")
-        msg = f"⚠️ {slot_name} 未配置账号密码\n账号：{email_masked}"
-        log(msg)
-        tg_notify(msg)
+        append_signed_log(slot, "CHECK_NO_CONFIG", email_masked, "-", "-", "missing secrets")
+        tg_notify(
+            f"⚠️【Neworld 未配置账号】\n\n"
+            f"🧩 槽位：{slot}\n"
+            f"👤 账号：***\n"
+            f"💥 说明：missing secrets\n\n"
+            f"🕒 时间：{ts_cn_str()}"
+        )
+        return
+
+    # ===== 防重复 =====
+    if has_final_status_today(slot):
+        log("Already done today, skip.")
         return
 
     driver = init_chrome()
 
     try:
-        log("🌐 打开登录页")
+        # ===== 登录 =====
         driver.get(LOGIN_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         save_screen(driver, "login_page")
 
-        log("✍️ 输入账号密码")
-        email_input = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.ID, "email")))
-        pwd_input = driver.find_element(By.ID, "passwd")
-
-        email_input.clear()
-        email_input.send_keys(username)
-        pwd_input.clear()
-        pwd_input.send_keys(password)
-        save_screen(driver, "filled_form")
-
-        log("🔐 点击登录按钮")
-        login_btn = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "login-dashboard")))
-        login_btn.click()
+        driver.find_element(By.ID, "email").send_keys(username)
+        driver.find_element(By.ID, "passwd").send_keys(password)
+        driver.find_element(By.ID, "login-dashboard").click()
 
         WebDriverWait(driver, 30).until(lambda d: "/auth/login" not in d.current_url)
         time.sleep(2)
         save_screen(driver, "after_login")
-        log("✅ 登录成功")
 
-        log("🏠 进入用户中心")
+        # ===== 进入用户中心 =====
         driver.get(USER_CENTER_URL)
         WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
         time.sleep(2)
         save_screen(driver, "user_center")
 
-        remaining_before, expire_before = extract_remaining_and_expire(driver)
-        log(f"📦 当前剩余：{remaining_before} | 当前到期：{expire_before}")
+        remaining, expire = extract_remaining_and_expire(driver)
 
-        sign_btn = WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.ID, "check-in")))
-        btn_text = (sign_btn.text or "").strip()
-        log(f"📌 签到按钮文字：{btn_text}")
+        sign_btn = driver.find_element(By.ID, "check-in")
+        btn_text = sign_btn.text.strip()
 
-        if ("已" in btn_text) or ("成功" in btn_text):
-            append_signed_log(slot_name, "ALREADY_DONE", email_masked, remaining_before, expire_before, f"btn={btn_text}")
-            msg = (
-                f"✅ {slot_name} 已签到\n"
-                f"账号：{email_masked}\n"
-                f"剩余流量：{remaining_before}\n"
-                f"到期时间：{expire_before}"
+        # ===== 已签到 =====
+        if "已" in btn_text or "成功" in btn_text:
+            append_signed_log(slot, "ALREADY_DONE", email_masked, remaining, expire, f"btn={btn_text}")
+            tg_notify(
+                f"☑️【Neworld 今日已签到】\n\n"
+                f"👤 账号：{email_masked}\n"
+                f"🧩 槽位：{slot}\n"
+                f"📦 剩余流量：{remaining}\n"
+                f"⏳ 到期时间：{expire}\n\n"
+                f"🕒 时间：{ts_cn_str()}"
             )
-            tg_notify(msg)
             return
 
-        log("🖱️ 点击签到按钮")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", sign_btn)
-        time.sleep(1)
+        # ===== 点击签到 =====
         sign_btn.click()
-        time.sleep(3)
+        time.sleep(5)
         save_screen(driver, "after_click")
 
-        log("🔄 刷新页面以获取最新信息")
+        # ===== 强制刷新 =====
         driver.refresh()
-        WebDriverWait(driver, 30).until(lambda d: d.execute_script("return document.readyState") == "complete")
-        time.sleep(2)
+        time.sleep(5)
         save_screen(driver, "after_refresh")
 
-        remaining_after, expire_after = extract_remaining_and_expire(driver)
-        log(f"📦 更新后剩余：{remaining_after} | 更新后到期：{expire_after}")
+        remaining, expire = extract_remaining_and_expire(driver)
 
-        append_signed_log(slot_name, "SUCCESS", email_masked, remaining_after, expire_after, "clicked+refresh")
+        append_signed_log(slot, "SUCCESS", email_masked, remaining, expire, "clicked")
 
-        msg = (
-            f"✅ {slot_name} 签到成功\n"
-            f"账号：{email_masked}\n"
-            f"剩余流量：{remaining_after}\n"
-            f"到期时间：{expire_after}"
+        tg_notify(
+            f"🎉【Neworld 自动签到成功】\n\n"
+            f"👤 账号：{email_masked}\n"
+            f"🧩 槽位：{slot}\n"
+            f"📦 剩余流量：{remaining}\n"
+            f"⏳ 到期时间：{expire}\n\n"
+            f"🕒 时间：{ts_cn_str()}"
         )
-        tg_notify(msg)
-        log("🎉 签到完成")
 
     except Exception as e:
         save_screen(driver, "ERROR")
-        append_signed_log(slot_name, "FAILED", email_masked, "-", "-", f"{type(e).__name__}: {e}")
-        msg = f"❌ {slot_name} 签到失败\n账号：{email_masked}\n错误：{type(e).__name__}: {e}"
-        log(msg)
-        tg_notify(msg)
+        append_signed_log(slot, "FAILED", email_masked, "-", "-", str(e))
+
+        tg_notify(
+            f"❌【Neworld 签到失败】\n\n"
+            f"👤 账号：{email_masked}\n"
+            f"🧩 槽位：{slot}\n"
+            f"💥 错误：{type(e).__name__}: {e}\n\n"
+            f"🕒 时间：{ts_cn_str()}"
+        )
 
     finally:
         try:
             driver.quit()
         except:
             pass
-        log("🛑 脚本结束")
+        log("🛑 Script finished")
 
 if __name__ == "__main__":
     main()
