@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       test_slot:
-        description: "选择要运行的账号槽位（SLOT1~SLOT4）"
+        description: "选择要运行的账号槽位（SLOT1~SLOT6）"
         required: true
         default: "SLOT1"
         type: choice
@@ -14,6 +14,8 @@ on:
           - SLOT2
           - SLOT3
           - SLOT4
+          - SLOT5
+          - SLOT6
 
 permissions:
   contents: write
@@ -50,7 +52,7 @@ jobs:
             USER="${!USER_VAR}"
             PASS="${!PASS_VAR}"
 
-            # ===== 如果没配置：标记并正常退出 =====
+            # ===== 如果没配置：标记并正常跳过 =====
             if [ -z "$USER" ] || [ -z "$PASS" ]; then
               echo "⚠️ Slot $SLOT_NAME is not configured, skipping."
 
@@ -77,6 +79,10 @@ jobs:
           NW_SLOT3_PASS: ${{ secrets.NW_SLOT3_PASS }}
           NW_SLOT4_USER: ${{ secrets.NW_SLOT4_USER }}
           NW_SLOT4_PASS: ${{ secrets.NW_SLOT4_PASS }}
+          NW_SLOT5_USER: ${{ secrets.NW_SLOT5_USER }}
+          NW_SLOT5_PASS: ${{ secrets.NW_SLOT5_PASS }}
+          NW_SLOT6_USER: ${{ secrets.NW_SLOT6_USER }}
+          NW_SLOT6_PASS: ${{ secrets.NW_SLOT6_PASS }}
 
       # ========== 执行签到（仅当没有被跳过） ==========
       - name: Run signin
