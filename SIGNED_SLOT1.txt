@@ -1,1 +1,2 @@
 2026-01-25 08:03:48 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=20.49GB | expire=2026-01-26 16:07:58 | detail=clicked+refresh
+2026-01-26 08:04:29 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=20.02GB | expire=2026-01-26 20:07:58 | detail=-
