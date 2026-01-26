@@ -1,5 +1,5 @@
 # ==========================================================
-# Neworld 终极自动签到脚本
+# Neworld 终极自动签到脚本（工程稳定版）
 # ==========================================================
 
 import os
@@ -22,11 +22,17 @@ USER_CENTER_URL = "https://neworld.tv/user"
 
 LOG_FILE = "run.log"
 
-# 每次签到赠送流量（单位：GB）
+# 每次签到赠送流量（GB）
 SIGN_BONUS_GB = 0.5
 
 # 如果计算出来的“消耗”超过这个值，认为是异常（防止套餐重置/数据错误）
 MAX_REASONABLE_USED_GB = 100.0
+
+# ==================== 标准化文案 ====================
+
+USED_FIRST = "首次记录"
+USED_INVALID = "无法统计"
+USED_ERROR = "昨日异常"
 
 # ==================== 日志系统 ====================
 
@@ -61,7 +67,6 @@ TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
 
 def tg_send(text: str):
-    """发送 Telegram 消息（如果没配置 token 则静默跳过）"""
     if not TG_TOKEN or not TG_CHAT_ID:
         return
     try:
@@ -77,7 +82,6 @@ def tg_send(text: str):
 # ==================== 邮箱脱敏 ====================
 
 def mask_email(email: str):
-    """将邮箱脱敏显示，例如：ab***cd@o***.com"""
     email = (email or "").strip()
     if "@" not in email:
         return "***"
@@ -93,7 +97,6 @@ def mask_email(email: str):
 # ==================== Chrome 初始化 ====================
 
 def init_chrome():
-    """初始化无头 Chrome"""
     from webdriver_manager.chrome import ChromeDriverManager
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -104,7 +107,6 @@ def init_chrome():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 def save_screen(driver, name):
-    """保存截图，文件名带时间戳"""
     try:
         fn = f"{now_cn().strftime('%Y%m%d_%H%M%S')}_{name}.png"
         driver.save_screenshot(fn)
@@ -115,16 +117,11 @@ def save_screen(driver, name):
 # ==================== SIGNED 日志相关 ====================
 
 def signed_file(slot):
-    """返回当前 slot 的日志文件名"""
     return f"SIGNED_{slot}.txt"
 
 FINAL_STATUSES = {"SUCCESS", "ALREADY_DONE", "CHECK_NO_CONFIG"}
 
 def has_done_today(slot):
-    """
-    判断今天是否已经有 SUCCESS / ALREADY_DONE / CHECK_NO_CONFIG 记录
-    如果有，则本次不再重复跑
-    """
     path = signed_file(slot)
     if not os.path.exists(path):
         return False
@@ -135,35 +132,43 @@ def has_done_today(slot):
                 return True
     return False
 
-# ==================== 读取上一次剩余流量 ====================
+# ==================== 读取上一条有效记录 ====================
 
-def get_last_remaining(slot):
+def get_last_record(slot):
     """
-    从历史日志中，读取“最近一次 SUCCESS / ALREADY_DONE”的 remaining
-    返回：float 或 None
+    返回：
+      (last_remaining: float or None, last_status: str or None)
     """
     path = signed_file(slot)
     if not os.path.exists(path):
-        return None
+        return None, None
 
-    last = None
+    last_remaining = None
+    last_status = None
+
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            if "remaining=" in line and ("SUCCESS" in line or "ALREADY_DONE" in line):
-                m = re.search(r"remaining=([0-9.]+)GB", line)
-                if m:
-                    try:
-                        last = float(m.group(1))
-                    except:
-                        pass
-    return last
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) < 6:
+                continue
+
+            status = parts[3]
+            rem_part = parts[4]
+
+            # 只关心有 remaining 的记录
+            m = re.search(r"remaining=([0-9.]+)GB", rem_part)
+            if m:
+                try:
+                    last_remaining = float(m.group(1))
+                    last_status = status
+                except:
+                    pass
+
+    return last_remaining, last_status
 
 # ==================== 写入日志 ====================
 
 def append_signed(slot, status, email, remaining="-", used="-", expire="-", detail="-"):
-    """
-    写入一行日志，格式统一，Dashboard 和 Worker 都靠这个解析
-    """
     line = (
         f"{ts_cn_str()} | {slot} | {email} | {status} | "
         f"remaining={remaining} | used={used} | expire={expire} | detail={detail}\n"
@@ -174,21 +179,14 @@ def append_signed(slot, status, email, remaining="-", used="-", expire="-", deta
 # ==================== 页面解析 ====================
 
 def extract_remaining_and_expire(driver):
-    """
-    从用户中心页面中解析：
-      - 剩余流量
-      - 到期时间
-    """
     body = driver.find_element(By.TAG_NAME, "body").text
     remaining = "-"
     expire = "-"
 
-    # 解析剩余流量
     m1 = re.search(r"剩余流量\s*([0-9.]+\s*(GB|MB|TB))", body)
     if m1:
         remaining = m1.group(1).replace(" ", "")
 
-    # 优先从包含“到期”的行中找时间
     for line in body.splitlines():
         if "到期" in line:
             m2 = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
@@ -196,7 +194,6 @@ def extract_remaining_and_expire(driver):
                 expire = m2.group(1)
                 break
 
-    # 兜底：如果上面没找到，从全文找最大的时间
     if expire == "-":
         all_times = re.findall(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", body)
         if all_times:
@@ -266,7 +263,7 @@ def main():
 
     log(f"🚀 Start signin | Slot={slot} | Account={email_masked}")
 
-    # ---------- 如果今天已经有最终记录，直接跳过 ----------
+    # ---------- 如果今天已经有最终记录 ----------
     if has_done_today(slot):
         log("🟡 Already done today, skip.")
         tg_already(slot, email_masked, "-", "-")
@@ -302,23 +299,32 @@ def main():
         # ---------- 抓取当前剩余流量 & 到期时间 ----------
         remaining, expire = extract_remaining_and_expire(driver)
 
-        # ---------- 计算昨日消耗 ----------
-        last_remaining = get_last_remaining(slot)
+        # ---------- 读取上一条记录 ----------
+        last_remaining, last_status = get_last_record(slot)
 
-        used = "-"
-        try:
-            if last_remaining is not None and remaining.endswith("GB"):
-                cur = float(remaining.replace("GB", ""))
-                # 核心公式：真实消耗 = (上次剩余 - 本次剩余) + 签到奖励
-                delta = last_remaining - cur + SIGN_BONUS_GB
+        # ---------- 计算昨日消耗（应用标准化文案体系） ----------
+        used = USED_FIRST
 
-                # 合理性校验：必须 >= 0 且不能离谱大
-                if 0 <= delta <= MAX_REASONABLE_USED_GB:
-                    used = f"{delta:.2f}GB"
+        if last_remaining is None:
+            used = USED_FIRST
+        elif last_status not in ("SUCCESS", "ALREADY_DONE"):
+            used = USED_ERROR
+        else:
+            try:
+                if not remaining.endswith("GB"):
+                    used = USED_INVALID
                 else:
-                    used = "-"
-        except:
-            used = "-"
+                    cur = float(remaining.replace("GB", ""))
+                    # 核心公式：真实消耗 = (上次剩余 - 本次剩余) + 签到奖励
+                    delta = last_remaining - cur + SIGN_BONUS_GB
+
+                    # 合理性校验
+                    if 0 <= delta <= MAX_REASONABLE_USED_GB:
+                        used = f"{delta:.2f}GB"
+                    else:
+                        used = USED_INVALID
+            except:
+                used = USED_INVALID
 
         # ---------- 查找签到按钮 ----------
         sign_btn = driver.find_element(By.ID, "check-in")
