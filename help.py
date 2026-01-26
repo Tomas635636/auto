@@ -1,4 +1,6 @@
-# ========== Neworld 终极自动签到脚本（含流量消耗统计 + Telegram 美化） ==========
+# ==========================================================
+# Neworld 终极自动签到脚本
+# ==========================================================
 
 import os
 import re
@@ -13,12 +15,21 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# ==================== 基本配置 ====================
+
 LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
 
 LOG_FILE = "run.log"
 
-# ========== 日志 ==========
+# 每次签到赠送流量（单位：GB）
+SIGN_BONUS_GB = 0.5
+
+# 如果计算出来的“消耗”超过这个值，认为是异常（防止套餐重置/数据错误）
+MAX_REASONABLE_USED_GB = 100.0
+
+# ==================== 日志系统 ====================
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -31,7 +42,8 @@ logging.basicConfig(
 def log(msg: str):
     logging.info(msg)
 
-# ========== 时区 ==========
+# ==================== 时区（北京时间） ====================
+
 CN_TZ = timezone(timedelta(hours=8))
 
 def now_cn():
@@ -43,11 +55,13 @@ def ts_cn_str():
 def today_cn_str():
     return now_cn().strftime("%Y-%m-%d")
 
-# ========== Telegram ==========
+# ==================== Telegram ====================
+
 TG_TOKEN = os.environ.get("TG_BOT_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "").strip()
 
 def tg_send(text: str):
+    """发送 Telegram 消息（如果没配置 token 则静默跳过）"""
     if not TG_TOKEN or not TG_CHAT_ID:
         return
     try:
@@ -60,8 +74,10 @@ def tg_send(text: str):
     except:
         pass
 
-# ========== 邮箱脱敏 ==========
+# ==================== 邮箱脱敏 ====================
+
 def mask_email(email: str):
+    """将邮箱脱敏显示，例如：ab***cd@o***.com"""
     email = (email or "").strip()
     if "@" not in email:
         return "***"
@@ -74,8 +90,10 @@ def mask_email(email: str):
     suffix = "." + ".".join(domain.split(".")[1:])
     return f"{name_mask}@{d0[:1]}***{suffix}"
 
-# ========== Chrome ==========
+# ==================== Chrome 初始化 ====================
+
 def init_chrome():
+    """初始化无头 Chrome"""
     from webdriver_manager.chrome import ChromeDriverManager
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
@@ -86,6 +104,7 @@ def init_chrome():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 def save_screen(driver, name):
+    """保存截图，文件名带时间戳"""
     try:
         fn = f"{now_cn().strftime('%Y%m%d_%H%M%S')}_{name}.png"
         driver.save_screenshot(fn)
@@ -93,13 +112,19 @@ def save_screen(driver, name):
     except:
         pass
 
-# ========== SIGNED ==========
+# ==================== SIGNED 日志相关 ====================
+
 def signed_file(slot):
+    """返回当前 slot 的日志文件名"""
     return f"SIGNED_{slot}.txt"
 
 FINAL_STATUSES = {"SUCCESS", "ALREADY_DONE", "CHECK_NO_CONFIG"}
 
 def has_done_today(slot):
+    """
+    判断今天是否已经有 SUCCESS / ALREADY_DONE / CHECK_NO_CONFIG 记录
+    如果有，则本次不再重复跑
+    """
     path = signed_file(slot)
     if not os.path.exists(path):
         return False
@@ -110,8 +135,13 @@ def has_done_today(slot):
                 return True
     return False
 
-# ========== 读取上一次剩余流量 ==========
+# ==================== 读取上一次剩余流量 ====================
+
 def get_last_remaining(slot):
+    """
+    从历史日志中，读取“最近一次 SUCCESS / ALREADY_DONE”的 remaining
+    返回：float 或 None
+    """
     path = signed_file(slot)
     if not os.path.exists(path):
         return None
@@ -122,11 +152,18 @@ def get_last_remaining(slot):
             if "remaining=" in line and ("SUCCESS" in line or "ALREADY_DONE" in line):
                 m = re.search(r"remaining=([0-9.]+)GB", line)
                 if m:
-                    last = float(m.group(1))
+                    try:
+                        last = float(m.group(1))
+                    except:
+                        pass
     return last
 
-# ========== 写入日志 ==========
+# ==================== 写入日志 ====================
+
 def append_signed(slot, status, email, remaining="-", used="-", expire="-", detail="-"):
+    """
+    写入一行日志，格式统一，Dashboard 和 Worker 都靠这个解析
+    """
     line = (
         f"{ts_cn_str()} | {slot} | {email} | {status} | "
         f"remaining={remaining} | used={used} | expire={expire} | detail={detail}\n"
@@ -134,16 +171,24 @@ def append_signed(slot, status, email, remaining="-", used="-", expire="-", deta
     with open(signed_file(slot), "a", encoding="utf-8") as f:
         f.write(line)
 
-# ========== 页面解析 ==========
+# ==================== 页面解析 ====================
+
 def extract_remaining_and_expire(driver):
+    """
+    从用户中心页面中解析：
+      - 剩余流量
+      - 到期时间
+    """
     body = driver.find_element(By.TAG_NAME, "body").text
     remaining = "-"
     expire = "-"
 
+    # 解析剩余流量
     m1 = re.search(r"剩余流量\s*([0-9.]+\s*(GB|MB|TB))", body)
     if m1:
         remaining = m1.group(1).replace(" ", "")
 
+    # 优先从包含“到期”的行中找时间
     for line in body.splitlines():
         if "到期" in line:
             m2 = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
@@ -151,6 +196,7 @@ def extract_remaining_and_expire(driver):
                 expire = m2.group(1)
                 break
 
+    # 兜底：如果上面没找到，从全文找最大的时间
     if expire == "-":
         all_times = re.findall(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", body)
         if all_times:
@@ -158,7 +204,8 @@ def extract_remaining_and_expire(driver):
 
     return remaining, expire
 
-# ========== Telegram 模板 ==========
+# ==================== Telegram 模板 ====================
+
 def tg_success(slot, email, remaining, used, expire):
     tg_send(
 f"""🟢 *Neworld 自动签到成功*
@@ -209,7 +256,8 @@ f"""🔴 *Neworld 签到失败*
 🕒 *时间:* `{ts_cn_str()}`
 """)
 
-# ========== 主流程 ==========
+# ==================== 主流程 ====================
+
 def main():
     slot = os.environ.get("SLOT_NAME", "UNKNOWN")
     username = os.environ.get("USERNAME", "")
@@ -218,11 +266,13 @@ def main():
 
     log(f"🚀 Start signin | Slot={slot} | Account={email_masked}")
 
+    # ---------- 如果今天已经有最终记录，直接跳过 ----------
     if has_done_today(slot):
         log("🟡 Already done today, skip.")
         tg_already(slot, email_masked, "-", "-")
         return
 
+    # ---------- 如果没配置账号 ----------
     if not username or not password:
         append_signed(slot, "CHECK_NO_CONFIG", email_masked)
         tg_skip(slot)
@@ -231,6 +281,7 @@ def main():
     driver = init_chrome()
 
     try:
+        # ---------- 打开登录页 ----------
         driver.get(LOGIN_URL)
         save_screen(driver, "login_page")
 
@@ -243,42 +294,55 @@ def main():
         driver.find_element(By.ID, "login-dashboard").click()
         time.sleep(3)
 
+        # ---------- 进入用户中心 ----------
         driver.get(USER_CENTER_URL)
         time.sleep(3)
         save_screen(driver, "user_center")
 
+        # ---------- 抓取当前剩余流量 & 到期时间 ----------
         remaining, expire = extract_remaining_and_expire(driver)
 
+        # ---------- 计算昨日消耗 ----------
         last_remaining = get_last_remaining(slot)
 
         used = "-"
         try:
             if last_remaining is not None and remaining.endswith("GB"):
-                cur = float(remaining.replace("GB",""))
-                delta = last_remaining - cur
-                if delta >= 0:
+                cur = float(remaining.replace("GB", ""))
+                # 核心公式：真实消耗 = (上次剩余 - 本次剩余) + 签到奖励
+                delta = last_remaining - cur + SIGN_BONUS_GB
+
+                # 合理性校验：必须 >= 0 且不能离谱大
+                if 0 <= delta <= MAX_REASONABLE_USED_GB:
                     used = f"{delta:.2f}GB"
+                else:
+                    used = "-"
         except:
-            pass
+            used = "-"
 
+        # ---------- 查找签到按钮 ----------
         sign_btn = driver.find_element(By.ID, "check-in")
-        btn_text = sign_btn.text
+        btn_text = sign_btn.text or ""
 
+        # ---------- 如果已经签过 ----------
         if "已" in btn_text or "成功" in btn_text:
             append_signed(slot, "ALREADY_DONE", email_masked, remaining, used, expire)
             tg_already(slot, email_masked, remaining, expire)
             return
 
+        # ---------- 执行签到 ----------
         sign_btn.click()
         time.sleep(3)
         save_screen(driver, "after_click")
 
+        # ---------- 刷新页面，获取签到后的新数据 ----------
         driver.refresh()
         time.sleep(3)
         save_screen(driver, "after_refresh")
 
         remaining, expire = extract_remaining_and_expire(driver)
 
+        # ---------- 写入 SUCCESS ----------
         append_signed(slot, "SUCCESS", email_masked, remaining, used, expire)
         tg_success(slot, email_masked, remaining, used, expire)
 
