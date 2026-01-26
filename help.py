@@ -1,4 +1,4 @@
-# ========== Neworld 终极自动签到脚本（Telegram 美化版） ==========
+# ========== Neworld 终极自动签到脚本（含流量消耗统计 + Telegram 美化） ==========
 
 import os
 import re
@@ -106,12 +106,31 @@ def has_done_today(slot):
     today = today_cn_str()
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            if line.startswith(today) and any(s in line for s in FINAL_STATUSES):
+            if today in line and any(s in line for s in FINAL_STATUSES):
                 return True
     return False
 
-def append_signed(slot, status, email, remaining="-", expire="-", detail="-"):
-    line = f"{ts_cn_str()} | {slot} | {email} | {status} | remaining={remaining} | expire={expire} | detail={detail}\n"
+# ========== 读取上一次剩余流量 ==========
+def get_last_remaining(slot):
+    path = signed_file(slot)
+    if not os.path.exists(path):
+        return None
+
+    last = None
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if "remaining=" in line and ("SUCCESS" in line or "ALREADY_DONE" in line):
+                m = re.search(r"remaining=([0-9.]+)GB", line)
+                if m:
+                    last = float(m.group(1))
+    return last
+
+# ========== 写入日志 ==========
+def append_signed(slot, status, email, remaining="-", used="-", expire="-", detail="-"):
+    line = (
+        f"{ts_cn_str()} | {slot} | {email} | {status} | "
+        f"remaining={remaining} | used={used} | expire={expire} | detail={detail}\n"
+    )
     with open(signed_file(slot), "a", encoding="utf-8") as f:
         f.write(line)
 
@@ -123,7 +142,7 @@ def extract_remaining_and_expire(driver):
 
     m1 = re.search(r"剩余流量\s*([0-9.]+\s*(GB|MB|TB))", body)
     if m1:
-        remaining = m1.group(1)
+        remaining = m1.group(1).replace(" ", "")
 
     for line in body.splitlines():
         if "到期" in line:
@@ -140,18 +159,18 @@ def extract_remaining_and_expire(driver):
     return remaining, expire
 
 # ========== Telegram 模板 ==========
-def tg_success(slot, email, remaining, expire):
+def tg_success(slot, email, remaining, used, expire):
     tg_send(
 f"""🟢 *Neworld 自动签到成功*
 
-👤 *账号槽位:* `{slot}`
+👤 *账号:* `{slot}`
 📧 *邮箱:* `{email}`
 
-📊 *状态:* ✅ 签到成功
 📦 *剩余流量:* `{remaining}`
+📉 *昨日消耗:* `{used}`
 ⏳ *到期时间:* `{expire}`
 
-🕒 *执行时间:* `{ts_cn_str()}`
+🕒 *时间:* `{ts_cn_str()}`
 🤖 *执行器:* GitHub Actions
 """)
 
@@ -159,20 +178,20 @@ def tg_already(slot, email, remaining, expire):
     tg_send(
 f"""🟡 *Neworld 今日已签到*
 
-👤 *账号槽位:* `{slot}`
+👤 *账号:* `{slot}`
 📧 *邮箱:* `{email}`
 
 📦 *剩余流量:* `{remaining}`
 ⏳ *到期时间:* `{expire}`
 
-🕒 *执行时间:* `{ts_cn_str()}`
+🕒 *时间:* `{ts_cn_str()}`
 """)
 
 def tg_skip(slot):
     tg_send(
 f"""🟠 *Neworld 跳过执行*
 
-👤 *账号槽位:* `{slot}`
+👤 *账号:* `{slot}`
 ⚠️ *原因:* 未配置账号密码
 
 🕒 *时间:* `{ts_cn_str()}`
@@ -182,7 +201,7 @@ def tg_failed(slot, email, err):
     tg_send(
 f"""🔴 *Neworld 签到失败*
 
-👤 *账号槽位:* `{slot}`
+👤 *账号:* `{slot}`
 📧 *邮箱:* `{email}`
 
 ❌ *错误:* `{err}`
@@ -230,11 +249,23 @@ def main():
 
         remaining, expire = extract_remaining_and_expire(driver)
 
+        last_remaining = get_last_remaining(slot)
+
+        used = "-"
+        try:
+            if last_remaining is not None and remaining.endswith("GB"):
+                cur = float(remaining.replace("GB",""))
+                delta = last_remaining - cur
+                if delta >= 0:
+                    used = f"{delta:.2f}GB"
+        except:
+            pass
+
         sign_btn = driver.find_element(By.ID, "check-in")
         btn_text = sign_btn.text
 
         if "已" in btn_text or "成功" in btn_text:
-            append_signed(slot, "ALREADY_DONE", email_masked, remaining, expire)
+            append_signed(slot, "ALREADY_DONE", email_masked, remaining, used, expire)
             tg_already(slot, email_masked, remaining, expire)
             return
 
@@ -248,12 +279,12 @@ def main():
 
         remaining, expire = extract_remaining_and_expire(driver)
 
-        append_signed(slot, "SUCCESS", email_masked, remaining, expire)
-        tg_success(slot, email_masked, remaining, expire)
+        append_signed(slot, "SUCCESS", email_masked, remaining, used, expire)
+        tg_success(slot, email_masked, remaining, used, expire)
 
     except Exception as e:
         save_screen(driver, "ERROR")
-        append_signed(slot, "FAILED", email_masked, "-", "-", str(e))
+        append_signed(slot, "FAILED", email_masked, "-", "-", "-", str(e))
         tg_failed(slot, email_masked, str(e))
 
     finally:
