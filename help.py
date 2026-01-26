@@ -26,7 +26,7 @@ LOG_FILE = "run.log"
 SIGN_BONUS_GB = 0.5
 
 # 如果计算出来的“消耗”超过这个值，认为是异常（防止套餐重置/数据错误）
-MAX_REASONABLE_USED_GB = 100.0
+MAX_REASONABLE_USED_GB = 10.0
 
 # ==================== 标准化文案 ====================
 
