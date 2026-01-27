@@ -1,4 +1,4 @@
-# ========== Neworld 终极自动签到脚本（含：昨日消耗统计 + Dashboard 支持版） ==========
+# ========== Neworld 终极自动签到脚本（含：昨日消耗 + 历史趋势抓取） ==========
 
 import os
 import re
@@ -163,16 +163,18 @@ def compute_used_gb(prev_remaining, curr_remaining):
 
     return round(used, 2)
 
-def append_signed(slot, status, email, remaining="-", used=None, expire="-", detail="-"):
+# [修改] 增加了 history 参数
+def append_signed(slot, status, email, remaining="-", used=None, expire="-", detail="-", history="-"):
     used_part = "-"
     if used is None:
         used_part = "-"
     else:
         used_part = f"{used:.2f}GB"
 
+    # [修改] 写入日志格式，增加了 | history=...
     line = (
         f"{ts_cn_str()} | {slot} | {email} | {status} | "
-        f"remaining={remaining} | used={used_part} | expire={expire} | detail={detail}\n"
+        f"remaining={remaining} | used={used_part} | expire={expire} | history={history} | detail={detail}\n"
     )
 
     with open(signed_file(slot), "a", encoding="utf-8") as f:
@@ -201,6 +203,26 @@ def extract_remaining_and_expire(driver):
             expire = max(all_times)
 
     return remaining, expire
+
+# [新增] 从网页源码中提取流量历史数据
+def extract_traffic_history(driver):
+    try:
+        # 必须获取 page_source，因为数据在 script 标签里，body.text 可能会过滤掉
+        html = driver.page_source
+        
+        # 匹配 "series":[0,0,0.08...] 或 \"series\":[0,0,0.08...]
+        pattern = r'\\"series\\":\[([\d\.,]+)\]|"series":\[([\d\.,]+)\]'
+        match = re.search(pattern, html)
+        
+        if match:
+            # group(1) 是带转义引号的，group(2) 是正常的
+            history_data = match.group(1) or match.group(2)
+            log(f"📊 Traffic history found: {history_data}")
+            return history_data
+    except Exception as e:
+        log(f"⚠️ Failed to extract history: {e}")
+    
+    return "-"
 
 # ================== Telegram 模板 ==================
 def tg_success(slot, email, remaining, used, expire):
@@ -293,8 +315,8 @@ def main():
         save_screen(driver, "user_center")
 
         remaining_text, expire = extract_remaining_and_expire(driver)
+        # [修改] 这里先不存日志，等签到完刷新后再统一抓取历史
         curr_remaining_gb = parse_remaining_gb(remaining_text)
-
         prev_remaining_gb = get_last_remaining_from_log(slot)
         used_gb = compute_used_gb(prev_remaining_gb, curr_remaining_gb)
 
@@ -302,7 +324,9 @@ def main():
         btn_text = sign_btn.text
 
         if "已" in btn_text or "成功" in btn_text:
-            append_signed(slot, "ALREADY_DONE", email_masked, remaining_text, used_gb, expire)
+            # [新增] 即使已经签到，也尝试抓取历史数据
+            history_str = extract_traffic_history(driver)
+            append_signed(slot, "ALREADY_DONE", email_masked, remaining_text, used_gb, expire, history=history_str)
             tg_already(slot, email_masked, remaining_text, expire)
             return
 
@@ -320,12 +344,16 @@ def main():
         prev_remaining_gb = get_last_remaining_from_log(slot)
         used_gb = compute_used_gb(prev_remaining_gb, curr_remaining_gb)
 
-        append_signed(slot, "SUCCESS", email_masked, remaining_text, used_gb, expire)
+        # [新增] 刷新后，抓取历史流量数据
+        history_str = extract_traffic_history(driver)
+
+        # [修改] 写入日志时带上 history
+        append_signed(slot, "SUCCESS", email_masked, remaining_text, used_gb, expire, history=history_str)
         tg_success(slot, email_masked, remaining_text, used_gb, expire)
 
     except Exception as e:
         save_screen(driver, "ERROR")
-        append_signed(slot, "FAILED", email_masked, "-", None, "-", str(e))
+        append_signed(slot, "FAILED", email_masked, "-", None, "-", detail=str(e))
         tg_failed(slot, email_masked, str(e))
 
     finally:
