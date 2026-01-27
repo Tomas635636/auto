@@ -1,4 +1,4 @@
-# ========== Neworld 终极自动签到脚本（含：昨日消耗 + 历史趋势抓取） ==========
+# ========== Neworld 终极自动签到脚本（V2Board API 直连版） ==========
 
 import os
 import re
@@ -17,15 +17,6 @@ from selenium.webdriver.support import expected_conditions as EC
 LOGIN_URL = "https://neworld.tv/auth/login"
 USER_CENTER_URL = "https://neworld.tv/user"
 LOG_FILE = "run.log"
-
-# 签到赠送流量（GB）
-SIGNIN_BONUS_GB = 0.5
-
-# 极小抖动阈值（小于这个认为是 0）
-MIN_VALID_USED_GB = 0.01
-
-# 最大合理消耗（超过认为数据异常 / 套餐重置）
-MAX_REASONABLE_USED_GB = 10.0
 
 # ================== 日志 ==================
 logging.basicConfig(
@@ -130,40 +121,6 @@ def parse_remaining_gb(text: str):
     except:
         return None
 
-def get_last_remaining_from_log(slot):
-    path = signed_file(slot)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = [l.strip() for l in f if "remaining=" in l]
-        if not lines:
-            return None
-        last = lines[-1]
-        m = re.search(r"remaining=([0-9.]+)GB", last)
-        if not m:
-            return None
-        return float(m.group(1))
-    except:
-        return None
-
-def compute_used_gb(prev_remaining, curr_remaining):
-    if prev_remaining is None or curr_remaining is None:
-        return None
-
-    used = abs(prev_remaining + SIGNIN_BONUS_GB - curr_remaining)
-
-    # 极小抖动归零
-    if used < MIN_VALID_USED_GB:
-        return 0.0
-
-    # 异常保护
-    if used > MAX_REASONABLE_USED_GB:
-        return None
-
-    return round(used, 2)
-
-# [修改] 增加了 history 参数
 def append_signed(slot, status, email, remaining="-", used=None, expire="-", detail="-", history="-"):
     used_part = "-"
     if used is None:
@@ -171,7 +128,6 @@ def append_signed(slot, status, email, remaining="-", used=None, expire="-", det
     else:
         used_part = f"{used:.2f}GB"
 
-    # [修改] 写入日志格式，增加了 | history=...
     line = (
         f"{ts_cn_str()} | {slot} | {email} | {status} | "
         f"remaining={remaining} | used={used_part} | expire={expire} | history={history} | detail={detail}\n"
@@ -204,18 +160,14 @@ def extract_remaining_and_expire(driver):
 
     return remaining, expire
 
-# [新增] 从网页源码中提取流量历史数据
+# 从网页源码中提取流量历史数据
 def extract_traffic_history(driver):
     try:
-        # 必须获取 page_source，因为数据在 script 标签里，body.text 可能会过滤掉
         html = driver.page_source
-        
-        # 匹配 "series":[0,0,0.08...] 或 \"series\":[0,0,0.08...]
         pattern = r'\\"series\\":\[([\d\.,]+)\]|"series":\[([\d\.,]+)\]'
         match = re.search(pattern, html)
         
         if match:
-            # group(1) 是带转义引号的，group(2) 是正常的
             history_data = match.group(1) or match.group(2)
             log(f"📊 Traffic history found: {history_data}")
             return history_data
@@ -223,6 +175,19 @@ def extract_traffic_history(driver):
         log(f"⚠️ Failed to extract history: {e}")
     
     return "-"
+
+# [新增] 从 history 字符串中提取最后一个数值作为“昨日消耗”
+def extract_last_used_from_history(history_str):
+    if not history_str or history_str == "-":
+        return None
+    try:
+        # 分割字符串 "0,0,0.01,0.5" -> 取最后一个 "0.5"
+        parts = history_str.split(",")
+        if parts:
+            return float(parts[-1])
+    except:
+        pass
+    return None
 
 # ================== Telegram 模板 ==================
 def tg_success(slot, email, remaining, used, expire):
@@ -235,13 +200,14 @@ f"""🟢 *Neworld 自动签到成功*
 
 📊 *状态:* ✅ 签到成功
 📦 *剩余流量:* `{remaining}`
-📉 *昨日消耗:* `{used_text}`
+📉 *最新消耗:* `{used_text}`
 ⏳ *到期时间:* `{expire}`
 
 🕒 *时间:* `{ts_cn_str()}`
 """)
 
-def tg_already(slot, email, remaining, expire):
+def tg_already(slot, email, remaining, expire, used):
+    used_text = "未获取" if used is None else f"{used:.2f}GB"
     tg_send(
 f"""🟡 *Neworld 今日已签到*
 
@@ -249,6 +215,7 @@ f"""🟡 *Neworld 今日已签到*
 📧 *邮箱:* `{email}`
 
 📦 *剩余流量:* `{remaining}`
+📉 *最新消耗:* `{used_text}`
 ⏳ *到期时间:* `{expire}`
 
 🕒 *时间:* `{ts_cn_str()}`
@@ -287,7 +254,7 @@ def main():
 
     if has_done_today(slot):
         log("🟡 Already done today, skip.")
-        tg_already(slot, email_masked, "-", "-")
+        tg_already(slot, email_masked, "-", "-", None)
         return
 
     if not username or not password:
@@ -314,22 +281,21 @@ def main():
         time.sleep(3)
         save_screen(driver, "user_center")
 
-        remaining_text, expire = extract_remaining_and_expire(driver)
-        # [修改] 这里先不存日志，等签到完刷新后再统一抓取历史
-        curr_remaining_gb = parse_remaining_gb(remaining_text)
-        prev_remaining_gb = get_last_remaining_from_log(slot)
-        used_gb = compute_used_gb(prev_remaining_gb, curr_remaining_gb)
-
         sign_btn = driver.find_element(By.ID, "check-in")
         btn_text = sign_btn.text
 
+        # === 场景 1: 已经签到过 ===
         if "已" in btn_text or "成功" in btn_text:
-            # [新增] 即使已经签到，也尝试抓取历史数据
+            remaining_text, expire = extract_remaining_and_expire(driver)
             history_str = extract_traffic_history(driver)
+            # 直接从 history 拿 used
+            used_gb = extract_last_used_from_history(history_str)
+            
             append_signed(slot, "ALREADY_DONE", email_masked, remaining_text, used_gb, expire, history=history_str)
-            tg_already(slot, email_masked, remaining_text, expire)
+            tg_already(slot, email_masked, remaining_text, expire, used_gb)
             return
 
+        # === 场景 2: 需要签到 ===
         sign_btn.click()
         time.sleep(3)
         save_screen(driver, "after_click")
@@ -339,15 +305,11 @@ def main():
         save_screen(driver, "after_refresh")
 
         remaining_text, expire = extract_remaining_and_expire(driver)
-        curr_remaining_gb = parse_remaining_gb(remaining_text)
-
-        prev_remaining_gb = get_last_remaining_from_log(slot)
-        used_gb = compute_used_gb(prev_remaining_gb, curr_remaining_gb)
-
-        # [新增] 刷新后，抓取历史流量数据
+        # 获取 history
         history_str = extract_traffic_history(driver)
+        # 直接从 history 拿 used
+        used_gb = extract_last_used_from_history(history_str)
 
-        # [修改] 写入日志时带上 history
         append_signed(slot, "SUCCESS", email_masked, remaining_text, used_gb, expire, history=history_str)
         tg_success(slot, email_masked, remaining_text, used_gb, expire)
 
