@@ -2,3 +2,4 @@
 2026-01-26 08:04:29 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=20.02GB | expire=2026-01-26 20:07:58 | detail=-
 2026-01-27 08:11:49 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=20.4GB | used=0.12GB | expire=2026-01-27 12:11:41 | detail=-
 2026-01-28 08:11:00 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=20.87GB | used=0.02GB | expire=2026-01-28 12:10:52 | history=0,0.96,0.1,0.02 | detail=-
+2026-01-29 08:11:44 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=21.36GB | used=0.00GB | expire=2026-01-29 12:11:37 | history=0,0.96,0.1,0.02,0 | detail=-
