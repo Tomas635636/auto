@@ -14,8 +14,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # ================== 基本配置 ==================
-LOGIN_URL = "https://neworld.tv/auth/login"
-USER_CENTER_URL = "https://neworld.tv/user"
+LOGIN_URL = "https://neworld.cloud/auth/login"
+USER_CENTER_URL = "https://neworld.cloud/user"
 LOG_FILE = "run.log"
 
 # ================== 日志 ==================
