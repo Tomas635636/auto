@@ -5,3 +5,24 @@
 2026-01-29 08:11:44 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=21.36GB | used=0.00GB | expire=2026-01-29 12:11:37 | history=0,0.96,0.1,0.02,0 | detail=-
 2026-01-30 08:11:35 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=21.81GB | used=0.04GB | expire=2026-01-30 12:11:28 | history=0,0.96,0.1,0.02,0,0.04 | detail=-
 2026-01-31 08:11:17 | SLOT1 | Ki***31@o***.com | SUCCESS | remaining=22.27GB | used=0.03GB | expire=2026-01-31 12:11:09 | history=0,0.96,0.1,0.02,0,0.04,0.03 | detail=-
+2026-02-01 08:12:02 | SLOT1 | Ki***31@o***.com | FAILED | remaining=- | used=- | expire=- | history=- | detail=Message: 
+Stacktrace:
+#0 0x55684f44a4ba <unknown>
+#1 0x55684eeb3492 <unknown>
+#2 0x55684ef089b6 <unknown>
+#3 0x55684ef08bf1 <unknown>
+#4 0x55684ef544d4 <unknown>
+#5 0x55684ef51700 <unknown>
+#6 0x55684eefa6a2 <unknown>
+#7 0x55684eefb491 <unknown>
+#8 0x55684f410479 <unknown>
+#9 0x55684f413391 <unknown>
+#10 0x55684f3fca89 <unknown>
+#11 0x55684f413f4e <unknown>
+#12 0x55684f3e3070 <unknown>
+#13 0x55684f437ca8 <unknown>
+#14 0x55684f437e78 <unknown>
+#15 0x55684f449828 <unknown>
+#16 0x7f70a789caa4 <unknown>
+#17 0x7f70a7929c6c <unknown>
+
