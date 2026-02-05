@@ -10,3 +10,4 @@
 2026-02-02 15:58:54 | SLOT3 | To***36@o***.com | SUCCESS | remaining=22.95GB | used=0.03GB | expire=2026-02-02 19:58:47 | history=0.45,0.18,0.02,0.03,0,0.03,0.03 | detail=-
 2026-02-03 15:59:01 | SLOT3 | To***36@o***.com | SUCCESS | remaining=23.42GB | used=0.02GB | expire=2026-02-03 19:58:55 | history=0.18,0.02,0.03,0,0.03,0.03,0.02 | detail=-
 2026-02-04 15:58:33 | SLOT3 | To***36@o***.com | SUCCESS | remaining=23.91GB | used=0.00GB | expire=2026-02-04 19:58:27 | history=0.02,0.03,0,0.03,0.03,0.02,0 | detail=-
+2026-02-05 15:59:27 | SLOT3 | To***36@o***.com | SUCCESS | remaining=24.4GB | used=0.00GB | expire=2026-02-05 19:59:20 | history=0.03,0,0.03,0.03,0.02,0,0 | detail=-
