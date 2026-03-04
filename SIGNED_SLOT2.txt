@@ -37,3 +37,4 @@
 2026-03-01 12:01:36 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=38.29GB | used=0.00GB | expire=2026-03-01 16:01:30 | history=0,0,0,0,0,0,0 | detail=-
 2026-03-02 12:02:29 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=38.77GB | used=0.00GB | expire=2026-03-02 16:02:23 | history=0,0,0,0,0,0,0 | detail=-
 2026-03-03 12:02:36 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=39.26GB | used=0.00GB | expire=2026-03-03 16:02:29 | history=0,0,0,0,0,0,0 | detail=-
+2026-03-04 12:02:39 | SLOT2 | 63***07@q***.com | SUCCESS | remaining=39.63GB | used=0.13GB | expire=2026-03-04 16:02:28 | history=0,0,0,0,0,0,0.13 | detail=-
