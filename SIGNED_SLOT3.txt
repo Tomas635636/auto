@@ -88,3 +88,4 @@ Stacktrace:
 #17 0x7f1a59d29c6c <unknown>
 
 2026-04-02 15:58:55 | SLOT3 | To***36@o***.com | SUCCESS | remaining=50.09GB | used=0.03GB | expire=2026-04-01 11:10:40 | history=0.02,0,0,0.05,0,0.02,0.03 | detail=-
+2026-04-03 15:58:44 | SLOT3 | To***36@o***.com | SUCCESS | remaining=50.09GB | used=0.00GB | expire=2026-04-01 11:10:40 | history=0,0,0.05,0,0.02,0.03,0 | detail=-
