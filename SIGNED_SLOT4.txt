@@ -74,3 +74,4 @@
 2026-04-08 19:56:36 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=50.29GB | used=0.00GB | expire=2026-03-29 19:55:50 | history=0,0,0,0,0,0,0 | detail=-
 2026-04-09 19:56:18 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=50.29GB | used=0.00GB | expire=2026-03-29 19:55:50 | history=0,0,0,0,0,0,0 | detail=-
 2026-04-10 19:56:22 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=50.29GB | used=0.00GB | expire=2026-03-29 19:55:50 | history=0,0,0,0,0,0,0 | detail=-
+2026-04-11 19:57:47 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=50.29GB | used=0.00GB | expire=2026-04-10 20:29:10 | history=0,0,0,0,0,0,0 | detail=-
