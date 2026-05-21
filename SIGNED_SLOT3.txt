@@ -176,3 +176,25 @@ Stacktrace:
 2026-05-18 15:59:38 | SLOT3 | To***36@o***.com | SUCCESS | remaining=49.53GB | used=0.00GB | expire=2026-05-14 09:47:44 | history=0,0,1.01,0.42,0,0,0,0 | detail=-
 2026-05-19 16:01:48 | SLOT3 | To***36@o***.com | FAILED | remaining=- | used=- | expire=- | history=- | detail=HTTPConnectionPool(host='localhost', port=54715): Read timed out. (read timeout=120)
 2026-05-20 15:59:54 | SLOT3 | To***36@o***.com | SUCCESS | remaining=49.53GB | used=0.00GB | expire=2026-05-14 09:47:44 | history=1.01,0.42,0,0,0,0,0,0 | detail=-
+2026-05-21 15:58:47 | SLOT3 | To***36@o***.com | FAILED | remaining=- | used=- | expire=- | history=- | detail=Message: element not interactable
+  (Session info: chrome=148.0.7778.167); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#elementnotinteractableexception
+Stacktrace:
+#0 0x55c6ea84416a <unknown>
+#1 0x55c6ea241470 <unknown>
+#2 0x55c6ea296db5 <unknown>
+#3 0x55c6ea28b142 <unknown>
+#4 0x55c6ea28aa87 <unknown>
+#5 0x55c6ea2ddcbf <unknown>
+#6 0x55c6ea289222 <unknown>
+#7 0x55c6ea28a011 <unknown>
+#8 0x55c6ea809a0b <unknown>
+#9 0x55c6ea80c92d <unknown>
+#10 0x55c6ea7f6948 <unknown>
+#11 0x55c6ea80d4c0 <unknown>
+#12 0x55c6ea7dd560 <unknown>
+#13 0x55c6ea830dd8 <unknown>
+#14 0x55c6ea830f75 <unknown>
+#15 0x55c6ea842bce <unknown>
+#16 0x7feef3a9caa4 <unknown>
+#17 0x7feef3b29c6c <unknown>
+
