@@ -327,3 +327,25 @@ Stacktrace:
 #16 0x7f2eb449caa4 <unknown>
 #17 0x7f2eb4529c6c <unknown>
 
+2026-05-27 19:56:37 | SLOT4 | 17***41@q***.com | FAILED | remaining=- | used=- | expire=- | history=- | detail=Message: element not interactable
+  (Session info: chrome=148.0.7778.167); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#elementnotinteractableexception
+Stacktrace:
+#0 0x555f6fb7b16a <unknown>
+#1 0x555f6f578470 <unknown>
+#2 0x555f6f5cddb5 <unknown>
+#3 0x555f6f5c2142 <unknown>
+#4 0x555f6f5c1a87 <unknown>
+#5 0x555f6f614cbf <unknown>
+#6 0x555f6f5c0222 <unknown>
+#7 0x555f6f5c1011 <unknown>
+#8 0x555f6fb40a0b <unknown>
+#9 0x555f6fb4392d <unknown>
+#10 0x555f6fb2d948 <unknown>
+#11 0x555f6fb444c0 <unknown>
+#12 0x555f6fb14560 <unknown>
+#13 0x555f6fb67dd8 <unknown>
+#14 0x555f6fb67f75 <unknown>
+#15 0x555f6fb79bce <unknown>
+#16 0x7f1d2489caa4 <unknown>
+#17 0x7f1d24929c6c <unknown>
+
