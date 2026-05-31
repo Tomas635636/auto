@@ -120,3 +120,4 @@
 2026-05-29 00:02:59 | SLOT5 | Ma***55@h***.com | SUCCESS | remaining=52.09GB | used=0.00GB | expire=2026-05-27 00:31:33 | history=0.86,1.78,0.01,0,0,0.02,0,0 | detail=-
 2026-05-30 00:04:37 | SLOT5 | Ma***55@h***.com | SUCCESS | remaining=52.09GB | used=0.00GB | expire=2026-05-30 04:04:28 | history=1.78,0.01,0,0,0.02,0,0,0 | detail=-
 2026-05-31 00:03:37 | SLOT5 | Ma***55@h***.com | SUCCESS | remaining=52.09GB | used=0.00GB | expire=2026-05-31 04:03:29 | history=0.01,0,0,0.02,0,0,0,0 | detail=-
+2026-06-01 00:03:35 | SLOT5 | Ma***55@h***.com | SUCCESS | remaining=52.09GB | used=0.00GB | expire=2026-06-01 04:03:24 | history=0,0,0.02,0,0,0,0,0 | detail=-
