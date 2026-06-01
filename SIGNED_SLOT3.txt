@@ -271,3 +271,4 @@ Stacktrace:
 2026-05-29 15:59:41 | SLOT3 | To***36@o***.com | SUCCESS | remaining=43.26GB | used=0.00GB | expire=2026-05-26 08:11:30 | history=0.23,1.85,1.22,0.49,0.47,0,0,0 | detail=-
 2026-05-30 15:59:36 | SLOT3 | To***36@o***.com | SUCCESS | remaining=43.26GB | used=0.00GB | expire=2026-05-26 08:11:30 | history=1.85,1.22,0.49,0.47,0,0,0,0 | detail=-
 2026-05-31 15:59:27 | SLOT3 | To***36@o***.com | SUCCESS | remaining=43.26GB | used=0.00GB | expire=2026-05-26 08:11:30 | history=1.22,0.49,0.47,0,0,0,0,0 | detail=-
+2026-06-01 15:59:12 | SLOT3 | To***36@o***.com | SUCCESS | remaining=43.26GB | used=0.00GB | expire=2026-05-26 08:11:30 | history=0.49,0.47,0,0,0,0,0,0 | detail=-
