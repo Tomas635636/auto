@@ -375,3 +375,4 @@ Stacktrace:
 2026-05-30 19:56:33 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=39.39GB | used=0.00GB | expire=2026-05-28 11:59:24 | history=3.14,1.02,0.49,1.52,0.48,0.18,0,0 | detail=-
 2026-05-31 19:56:29 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=39.39GB | used=0.00GB | expire=2026-05-28 11:59:24 | history=1.02,0.49,1.52,0.48,0.18,0,0,0 | detail=-
 2026-06-01 19:56:00 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=39.39GB | used=0.00GB | expire=2026-05-28 11:59:24 | history=0.49,1.52,0.48,0.18,0,0,0,0 | detail=-
+2026-06-02 19:56:10 | SLOT4 | 17***41@q***.com | SUCCESS | remaining=39.39GB | used=0.00GB | expire=2026-05-28 11:59:24 | history=1.52,0.48,0.18,0,0,0,0,0 | detail=-
